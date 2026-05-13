@@ -62,7 +62,7 @@ export const ASSET_SPECS = {
     PISTOL: { width: 30, height: 20 },
     AUTO: { width: 40, height: 14 },
     GRENADE: { width: 17, height: 21 },
-    RPG: { width: 48, height: 20 }
+    RPG: { width: 48, height: 24 }
   },
   PROJECTILE: {
     BULLET: { width: 12, height: 5, file: ASSET_NAMES.PROJ_BULLET },
@@ -93,12 +93,46 @@ export const ASSET_SPECS = {
 export const GAME_CONFIG = {
   PLAYER: {
     MOVE_SPEED: 340,
-    JUMP_FORCE: -450,
-    DOUBLE_JUMP_FORCE: -400,
+    JUMP_FORCE: -1000,
+    DOUBLE_JUMP_FORCE: -800,
+    RISE_GRAVITY_MULTIPLIER: 3.5,
+    FALL_GRAVITY_MULTIPLIER: 4.0,
+    MAX_FALL_SPEED: 1100,
+    CROUCH_HITBOX: { width: 24, height: 29, offsetX: 12, offsetY: 29 },
     FRICTION: 1000,
     RUN_ANIMATION_FPS: 20
   },
   WEAPONS: {
+    HAND_POSE: {
+      PISTOL: {
+        STAND: { x: 2, y: 0 },
+        RUN: { x: 10, y: 4 },
+        CROUCH: { x: 8, y: -2 },
+        ORIGIN_X: 0.18,
+        DISPLAY_SCALE: 1
+      },
+      AUTO: {
+        STAND: { x: 0, y: 0 },
+        RUN: { x: 8, y: 0 },
+        CROUCH: { x: 9, y: -3 },
+        ORIGIN_X: 0.16,
+        DISPLAY_SCALE: 1.25
+      },
+      GRENADE: {
+        STAND: { x: 2, y: 4 },
+        RUN: { x: 4, y: -4 },
+        CROUCH: { x: 7, y: -3 },
+        ORIGIN_X: 0.35,
+        DISPLAY_SCALE: 1
+      },
+      RPG: {
+        STAND: { x: 0, y: -4 },
+        RUN: { x: 8, y: 0 },
+        CROUCH: { x: 10, y: -8 },
+        ORIGIN_X: 0.2,
+        DISPLAY_SCALE: 1
+      }
+    },
     GRENADE_THROW: {
       TRAJECTORY: 'arc',
       MIN_THROW_FORCE: 360,
@@ -121,6 +155,17 @@ export const GAME_CONFIG = {
   },
   WORLD: {
     GRAVITY: 1000
+  },
+  VISUALS: {
+    HELMET: {
+      STAND: { x: -3, y: -24 },
+      STAND_LEFT_CORRECTION_X: 0,
+      RUN: { x: 10, y: -24 },
+      RUN_LEFT_CORRECTION_X: 0,
+      CROUCH: { x: 0, y: -20 },
+      RUN_FRAME_BOB_Y: [3, 1, 0, 1, 1, 3, 1, 0, 1, 1],
+      NAME_OFFSET_Y: -24
+    }
   }
 } as const;
 

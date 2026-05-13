@@ -51,23 +51,26 @@
   const isCrouching = this.keys.CROUCH.isDown;
   if (isCrouching !== this.player.getData('crouching')) {
     this.player.setData('crouching', isCrouching);
+    const bottomBefore = this.player.body.bottom;
     if (isCrouching) {
-      this.player.body.setSize(16, 24); // 50% от 32x48
-      this.player.setScaleY(0.7);
-      this.moveSpeed = PHYSICS.MOVE_SPEED / 2;
       this.player.setTexture('player_crouch');
+      this.player.body.setSize(GAME_CONFIG.PLAYER.CROUCH_HITBOX.width, GAME_CONFIG.PLAYER.CROUCH_HITBOX.height, false);
+      this.player.body.setOffset(GAME_CONFIG.PLAYER.CROUCH_HITBOX.offsetX, GAME_CONFIG.PLAYER.CROUCH_HITBOX.offsetY);
+      this.moveSpeed = GAME_CONFIG.PLAYER.MOVE_SPEED / 2;
     } else {
-      this.player.body.setSize(32, 48);
-      this.player.setScaleY(1);
-      this.moveSpeed = PHYSICS.MOVE_SPEED;
       this.player.setTexture('player_idle');
+      this.player.body.setSize(49, 58, false);
+      this.player.body.setOffset(0, 0);
+      this.moveSpeed = GAME_CONFIG.PLAYER.MOVE_SPEED;
     }
+    this.player.y += bottomBefore - this.player.body.bottom;
+    this.player.body.updateFromGameObject();
   }
   ```
 - Применять `moveSpeed` в логике движения из Задачи 5.
 
 **🏗 Архитектурный контекст:**  
-Изменение `body.setSize` динамически меняет коллайдер Arcade Physics. Визуальное сжатие (`setScaleY`) синхронизировано с физикой. Это критичный prerequisite для подбора оружия (будет в задаче 18).
+Изменение `body.setSize` динамически меняет коллайдер Arcade Physics. Важно не масштабировать сам physics sprite через `setScaleY()`: это может протолкнуть тело вниз через платформу. Присед делается отдельной текстурой, отдельным hitbox и сохранением нижней точки тела. Это критичный prerequisite для подбора оружия (будет в задаче 18).
 
 **✅ Результат / Как тестировать:**
 - Удержание `Ctrl` → спрайт сжимается, хитбокс уменьшается вдвое, скорость падает.

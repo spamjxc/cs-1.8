@@ -14,7 +14,8 @@ All runtime assets live in `client/assets/`.
 - Explosion has no frame animation. The single sprite is scaled up and faded out by code.
 - Grenade projectile reuses the same `grenade.png` file as the pickup item. Do not create a separate grenade projectile file unless the code contract changes.
 - Grenade throw power bar is drawn by code with Phaser graphics/DOM canvas primitives. There is no image asset for it.
-- Helmet sprites are `24x12`. During run animation the head moves slightly up/down, so helmet rendering must follow a per-frame/head anchor Y offset. The run animation does not move the head left/right.
+- Helmet sprites are `24x12`. During run animation the head moves slightly up/down, so helmet rendering must follow a per-frame/head anchor Y offset. The run animation does not move the head left/right. Helmet placement has separate `STAND_LEFT_CORRECTION_X` and `RUN_LEFT_CORRECTION_X` constants.
+- Crouch must not scale the physics sprite. Use the crouch texture plus `GAME_CONFIG.PLAYER.CROUCH_HITBOX`, keep the body bottom fixed, and avoid `setScaleY()` because it can push the Arcade body through the floor.
 
 ## Required Files And Sizes
 
@@ -28,9 +29,9 @@ All runtime assets live in `client/assets/`.
 | Red helmet | `helmet_red.png` | `24x12` | Overlay-sized helmet. Follow vertical head bob during run. |
 | Blue helmet | `helmet_blue.png` | `24x12` | Overlay-sized helmet. Follow vertical head bob during run. |
 | Pistol pickup | `pistol.png` | `30x20` | Ground/pickup and hand visual source. |
-| SMG pickup | `smg.png` | `40x14` | Ground/pickup and hand visual source. |
+| SMG pickup | `smg.png` | source `40x14`, hand display scale `1.25` | Ground/pickup and hand visual source. In hands it renders about `50x18`, close to bazooka width. |
 | Grenade pickup/projectile | `grenade.png` | `17x21` | Same file for pickup and thrown projectile. |
-| Bazooka pickup | `bazooka.png` | `48x20` | Ground/pickup and hand visual source. |
+| Bazooka pickup | `bazooka.png` | `48x24` | Ground/pickup and hand visual source. |
 | Bullet projectile | `proj_bullet.png` | `12x5` | Fast projectile. Horizontal, points right. |
 | Rocket projectile | `proj_rocket.png` | `28x15` | Bazooka projectile. Horizontal, points right. |
 | Explosion | `explosion.png` | `64x64` | Single frame. Code scales from `0.4` to `2.2` and fades over `300ms`. |
