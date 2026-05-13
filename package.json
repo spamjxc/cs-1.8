@@ -1,0 +1,34 @@
+{
+  "name": "radiation-game",
+  "version": "1.0.0",
+  "description": "CS 1.8 Radiation - 2D LAN Stick Shooter",
+  "engines": {
+    "node": "12.22.12",
+    "npm": "6.14.16"
+  },
+  "scripts": {
+    "build:shared": "tsc -p shared/tsconfig.json",
+    "dev:client": "vite --config client/vite.config.ts",
+    "dev:server": "tsc-watch -p server/tsconfig.json --onSuccess \"node server/dist/index.js\"",
+    "dev": "npm run build:shared && concurrently \"npm run dev:client\" \"npm run dev:server\"",
+    "build": "npm run build:shared && vite build --config client/vite.config.ts && tsc -p server/tsconfig.json",
+    "start": "node server/dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "phaser": "3.60.0",
+    "express": "4.18.2",
+    "serve-static": "1.15.0",
+    "colyseus": "0.14.20",
+    "@colyseus/ws-transport": "0.14.20",
+    "@colyseus/schema": "1.0.40",
+    "msgpack-lite": "0.1.13"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "concurrently": "7.0.0",
+    "tsc-watch": "6.2.1",
+    "typescript": "4.9.5",
+    "vite": "2.9.18"
+  }
+}
