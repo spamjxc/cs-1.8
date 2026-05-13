@@ -1,5 +1,5 @@
 import * as Phaser from 'phaser';
-import { PHYSICS } from '@shared/constants';
+import { GAME_CONFIG } from '@shared/constants';
 import GameScene from '@client/scenes/GameScene';
 
 
@@ -12,7 +12,7 @@ const config: Phaser.Types.Core.GameConfig = {
   physics: {
     default: 'arcade',
     arcade: {
-      gravity: { y: PHYSICS.GRAVITY },
+      gravity: { y: GAME_CONFIG.WORLD.GRAVITY },
       debug: false
     }
   },
