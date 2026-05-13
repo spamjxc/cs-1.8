@@ -1,11 +1,29 @@
-import Phaser from 'phaser';
-import { ASSET_NAMES, PHYSICS } from '../../shared/dist/constants';
+import * as Phaser from 'phaser';
+import { ASSET_NAMES, GAME_CONFIG } from '@shared/constants';
+
+type MovementKeys = {
+  A: Phaser.Input.Keyboard.Key;
+  D: Phaser.Input.Keyboard.Key;
+};
+
+const SPRITE_KEYS = {
+  PLAYER_IDLE: 'player.idle',
+  PLAYER_RUN: 'player.run',
+  FLOOR: 'tile.floor',
+  WALL: 'tile.wall',
+  HELMET_RED: 'helmet.red',
+  HELMET_BLUE: 'helmet.blue'
+} as const;
+
+const ANIMATION_KEYS = {
+  PLAYER_RUN: 'player.run'
+} as const;
 
 export default class GameScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-  private keys!: Phaser.Types.Input.Keyboard.KeyCollection;
-  private groundGroup!: Phaser.Physics.Arcade.Group;
+  private keys!: MovementKeys;
+  private groundGroup!: Phaser.Physics.Arcade.StaticGroup;
 
   constructor() {
     super('GameScene');
@@ -13,87 +31,91 @@ export default class GameScene extends Phaser.Scene {
 
   preload(): void {
     // Load tile assets
-    this.load.image('floor', `assets/${ASSET_NAMES.TILE_FLOOR}`);
-    this.load.image('wall', `assets/${ASSET_NAMES.TILE_WALL}`);
+    this.load.image(SPRITE_KEYS.FLOOR, `assets/${ASSET_NAMES.TILE_FLOOR}`);
+    this.load.image(SPRITE_KEYS.WALL, `assets/${ASSET_NAMES.TILE_WALL}`);
     
     // Load player sprites
-    this.load.image('player_idle', `assets/${ASSET_NAMES.PLAYER_IDLE}`);
-    this.load.spritesheet('player_run', `assets/${ASSET_NAMES.PLAYER_RUN}`, {
+    this.load.image(SPRITE_KEYS.PLAYER_IDLE, `assets/${ASSET_NAMES.PLAYER_IDLE}`);
+    this.load.spritesheet(SPRITE_KEYS.PLAYER_RUN, `assets/${ASSET_NAMES.PLAYER_RUN}`, {
       frameWidth: 49,
       frameHeight: 58
     });
     
     // Load helmet assets
-    this.load.image('helmet_red', `assets/${ASSET_NAMES.HELMET_RED}`);
-    this.load.image('helmet_blue', `assets/${ASSET_NAMES.HELMET_BLUE}`);
+    this.load.image(SPRITE_KEYS.HELMET_RED, `assets/${ASSET_NAMES.HELMET_RED}`);
+    this.load.image(SPRITE_KEYS.HELMET_BLUE, `assets/${ASSET_NAMES.HELMET_BLUE}`);
   }
 
   create(): void {
+    if (!this.input.keyboard) {
+      throw new Error('Keyboard input is not available');
+    }
+
     // Create ground/platforms using tile_ground.png
     this.groundGroup = this.physics.add.staticGroup();
     
     // Create a series of ground tiles at the bottom
     for (let i = 0; i < 40; i++) {
-      const ground = this.groundGroup.create(i * 64, 680, 'floor');
+      const ground = this.groundGroup.create(i * 64, 680, SPRITE_KEYS.FLOOR) as Phaser.Physics.Arcade.Image;
       ground.setDisplaySize(64, 64);
       ground.refreshBody();
     }
     
     // Create some platforms
     for (let i = 5; i < 15; i++) {
-      const platform = this.groundGroup.create(i * 64, 500, 'floor');
+      const platform = this.groundGroup.create(i * 64, 500, SPRITE_KEYS.FLOOR) as Phaser.Physics.Arcade.Image;
       platform.setDisplaySize(64, 64);
       platform.refreshBody();
     }
     
     for (let i = 20; i < 30; i++) {
-      const platform = this.groundGroup.create(i * 64, 400, 'floor');
+      const platform = this.groundGroup.create(i * 64, 400, SPRITE_KEYS.FLOOR) as Phaser.Physics.Arcade.Image;
       platform.setDisplaySize(64, 64);
       platform.refreshBody();
     }
     
     // Create walls on the sides
     for (let i = 0; i < 12; i++) {
-      const leftWall = this.groundGroup.create(-32, i * 60, 'wall');
+      const leftWall = this.groundGroup.create(-32, i * 60, SPRITE_KEYS.WALL) as Phaser.Physics.Arcade.Image;
       leftWall.setDisplaySize(64, 64);
       leftWall.refreshBody();
       
-      const rightWall = this.groundGroup.create(40 * 64 + 32, i * 60, 'wall');
+      const rightWall = this.groundGroup.create(40 * 64 + 32, i * 60, SPRITE_KEYS.WALL) as Phaser.Physics.Arcade.Image;
       rightWall.setDisplaySize(64, 64);
       rightWall.refreshBody();
     }
     
     // Create ceiling
     for (let i = 0; i < 40; i++) {
-      const ceiling = this.groundGroup.create(i * 64, -32, 'wall');
+      const ceiling = this.groundGroup.create(i * 64, -32, SPRITE_KEYS.WALL) as Phaser.Physics.Arcade.Image;
       ceiling.setDisplaySize(64, 64);
       ceiling.refreshBody();
     }
     
     // Create player sprite
-    this.player = this.physics.add.sprite(200, 600, 'player_idle');
+    this.player = this.physics.add.sprite(200, 600, SPRITE_KEYS.PLAYER_IDLE);
     this.player.setCollideWorldBounds(false); // We use custom bounds with walls
     this.player.setBounce(0);
-    this.player.setDragX(PHYSICS.FRICTION);
+    this.player.setDragX(GAME_CONFIG.PLAYER.FRICTION);
     
     // Add collider between player and ground
     this.physics.add.collider(this.player, this.groundGroup);
     
     // Create animations
     this.anims.create({
-      key: 'run',
-      frames: this.anims.generateFrameNumbers('player_run', { start: 0, end: 9 }),
-      frameRate: 10,
+      key: ANIMATION_KEYS.PLAYER_RUN,
+      frames: this.anims.generateFrameNumbers(SPRITE_KEYS.PLAYER_RUN, { start: 0, end: 9 }),
+      frameRate: GAME_CONFIG.PLAYER.RUN_ANIMATION_FPS,
       repeat: -1
     });
     
     // Setup input
     this.cursors = this.input.keyboard.createCursorKeys();
-    this.keys = this.input.keyboard.addKeys('A,D');
+    this.keys = this.input.keyboard.addKeys('A,D') as MovementKeys;
     
     // Log asset loading
     console.log('Loaded asset config:', ASSET_NAMES.PLAYER_RUN);
-    console.log('Physics config:', PHYSICS);
+    console.log('Game config:', GAME_CONFIG);
   }
 
   update(): void {
@@ -109,23 +131,22 @@ export default class GameScene extends Phaser.Scene {
     }
     
     // Apply velocity
-    this.player.body.setVelocityX(dir * PHYSICS.MOVE_SPEED);
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    body.setVelocityX(dir * GAME_CONFIG.PLAYER.MOVE_SPEED);
     
     // Flip sprite based on direction
     if (dir === 1) {
-      this.player.setFlipX(true);
-    } else if (dir === -1) {
       this.player.setFlipX(false);
+    } else if (dir === -1) {
+      this.player.setFlipX(true);
     }
     
     // Handle animation switching
-    if (Math.abs(this.player.body.velocity.x) > 10) {
-      if (this.player.anims.currentAnim?.key !== 'run') {
-        this.player.anims.play('run', true);
-      }
+    if (Math.abs(body.velocity.x) > 10) {
+      this.player.anims.play(ANIMATION_KEYS.PLAYER_RUN, true);
     } else {
       this.player.anims.stop();
-      this.player.setTexture('player_idle');
+      this.player.setTexture(SPRITE_KEYS.PLAYER_IDLE);
     }
   }
 }

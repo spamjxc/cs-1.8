@@ -39,14 +39,30 @@ export const ASSET_NAMES = {
 } as const;
 
 /**
- * Physics constants
+ * Tunable gameplay parameters.
+ */
+export const GAME_CONFIG = {
+  PLAYER: {
+    MOVE_SPEED: 340,
+    JUMP_FORCE: -450,
+    DOUBLE_JUMP_FORCE: -400,
+    FRICTION: 1000,
+    RUN_ANIMATION_FPS: 20
+  },
+  WORLD: {
+    GRAVITY: 1000
+  }
+} as const;
+
+/**
+ * Backward-compatible aliases for older code while systems move to GAME_CONFIG.
  */
 export const PHYSICS = {
-  GRAVITY: 1000,
-  MOVE_SPEED: 200,
-  JUMP_FORCE: -450,
-  FRICTION: 1000,
-  DOUBLE_JUMP_FORCE: -400
+  GRAVITY: GAME_CONFIG.WORLD.GRAVITY,
+  MOVE_SPEED: GAME_CONFIG.PLAYER.MOVE_SPEED,
+  JUMP_FORCE: GAME_CONFIG.PLAYER.JUMP_FORCE,
+  FRICTION: GAME_CONFIG.PLAYER.FRICTION,
+  DOUBLE_JUMP_FORCE: GAME_CONFIG.PLAYER.DOUBLE_JUMP_FORCE
 } as const;
 
 /**
