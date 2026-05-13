@@ -1,11 +1,16 @@
-import Phaser from 'phaser';
-import { ASSET_NAMES, PHYSICS } from '../../shared/dist/constants';
+import * as Phaser from 'phaser';
+import { ASSET_NAMES, PHYSICS } from '@shared/constants';
+
+type MovementKeys = {
+  A: Phaser.Input.Keyboard.Key;
+  D: Phaser.Input.Keyboard.Key;
+};
 
 export default class GameScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-  private keys!: Phaser.Types.Input.Keyboard.KeyCollection;
-  private groundGroup!: Phaser.Physics.Arcade.Group;
+  private keys!: MovementKeys;
+  private groundGroup!: Phaser.Physics.Arcade.StaticGroup;
 
   constructor() {
     super('GameScene');
@@ -29,43 +34,47 @@ export default class GameScene extends Phaser.Scene {
   }
 
   create(): void {
+    if (!this.input.keyboard) {
+      throw new Error('Keyboard input is not available');
+    }
+
     // Create ground/platforms using tile_ground.png
     this.groundGroup = this.physics.add.staticGroup();
     
     // Create a series of ground tiles at the bottom
     for (let i = 0; i < 40; i++) {
-      const ground = this.groundGroup.create(i * 64, 680, 'floor');
+      const ground = this.groundGroup.create(i * 64, 680, 'floor') as Phaser.Physics.Arcade.Image;
       ground.setDisplaySize(64, 64);
       ground.refreshBody();
     }
     
     // Create some platforms
     for (let i = 5; i < 15; i++) {
-      const platform = this.groundGroup.create(i * 64, 500, 'floor');
+      const platform = this.groundGroup.create(i * 64, 500, 'floor') as Phaser.Physics.Arcade.Image;
       platform.setDisplaySize(64, 64);
       platform.refreshBody();
     }
     
     for (let i = 20; i < 30; i++) {
-      const platform = this.groundGroup.create(i * 64, 400, 'floor');
+      const platform = this.groundGroup.create(i * 64, 400, 'floor') as Phaser.Physics.Arcade.Image;
       platform.setDisplaySize(64, 64);
       platform.refreshBody();
     }
     
     // Create walls on the sides
     for (let i = 0; i < 12; i++) {
-      const leftWall = this.groundGroup.create(-32, i * 60, 'wall');
+      const leftWall = this.groundGroup.create(-32, i * 60, 'wall') as Phaser.Physics.Arcade.Image;
       leftWall.setDisplaySize(64, 64);
       leftWall.refreshBody();
       
-      const rightWall = this.groundGroup.create(40 * 64 + 32, i * 60, 'wall');
+      const rightWall = this.groundGroup.create(40 * 64 + 32, i * 60, 'wall') as Phaser.Physics.Arcade.Image;
       rightWall.setDisplaySize(64, 64);
       rightWall.refreshBody();
     }
     
     // Create ceiling
     for (let i = 0; i < 40; i++) {
-      const ceiling = this.groundGroup.create(i * 64, -32, 'wall');
+      const ceiling = this.groundGroup.create(i * 64, -32, 'wall') as Phaser.Physics.Arcade.Image;
       ceiling.setDisplaySize(64, 64);
       ceiling.refreshBody();
     }
@@ -89,7 +98,7 @@ export default class GameScene extends Phaser.Scene {
     
     // Setup input
     this.cursors = this.input.keyboard.createCursorKeys();
-    this.keys = this.input.keyboard.addKeys('A,D');
+    this.keys = this.input.keyboard.addKeys('A,D') as MovementKeys;
     
     // Log asset loading
     console.log('Loaded asset config:', ASSET_NAMES.PLAYER_RUN);
@@ -109,7 +118,8 @@ export default class GameScene extends Phaser.Scene {
     }
     
     // Apply velocity
-    this.player.body.setVelocityX(dir * PHYSICS.MOVE_SPEED);
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    body.setVelocityX(dir * PHYSICS.MOVE_SPEED);
     
     // Flip sprite based on direction
     if (dir === 1) {
@@ -119,7 +129,7 @@ export default class GameScene extends Phaser.Scene {
     }
     
     // Handle animation switching
-    if (Math.abs(this.player.body.velocity.x) > 10) {
+    if (Math.abs(body.velocity.x) > 10) {
       if (this.player.anims.currentAnim?.key !== 'run') {
         this.player.anims.play('run', true);
       }
