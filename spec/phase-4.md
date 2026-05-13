@@ -22,7 +22,7 @@
     const angle = Phaser.Math.Angle.Between(explodeX, explodeY, player.x, player.y);
     player.body.setVelocity(Math.cos(angle) * force, Math.sin(angle) * force);
   }
-  // Визуал: explosion_01.png, таймер 0.3с → setActive(false)
+  // Визуал: explosion.png, без spritesheet-анимации: scale up + fade за 0.3с → setActive(false)
   ```
 - Урон рассчитывается сервером: если `player.team !== ownerId.team` → `hp -= damage`.
 

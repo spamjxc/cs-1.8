@@ -1,5 +1,5 @@
 import * as Phaser from 'phaser';
-import { ASSET_NAMES, GAME_CONFIG } from '@shared/constants';
+import { ASSET_NAMES, ASSET_SPECS, GAME_CONFIG } from '@shared/constants';
 
 type MovementKeys = {
   A: Phaser.Input.Keyboard.Key;
@@ -37,8 +37,8 @@ export default class GameScene extends Phaser.Scene {
     // Load player sprites
     this.load.image(SPRITE_KEYS.PLAYER_IDLE, `assets/${ASSET_NAMES.PLAYER_IDLE}`);
     this.load.spritesheet(SPRITE_KEYS.PLAYER_RUN, `assets/${ASSET_NAMES.PLAYER_RUN}`, {
-      frameWidth: 49,
-      frameHeight: 58
+      frameWidth: ASSET_SPECS.PLAYER.RUN.frameWidth,
+      frameHeight: ASSET_SPECS.PLAYER.RUN.frameHeight
     });
     
     // Load helmet assets

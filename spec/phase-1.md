@@ -79,13 +79,13 @@ npm 6 не поддерживает workspaces, поэтому сборка бу
 - `shared/src/constants.ts`:
   ```ts
   export const ASSET_NAMES = {
-    PLAYER_IDLE: 'player_idle.png',
+    PLAYER_IDLE: 'player_base.png',
     PLAYER_RUN: 'player_run.png',
     PLAYER_CROUCH: 'player_crouch.png',
     PLAYER_DAMAGE: 'player_damage.png',
     HELMET_RED: 'helmet_red.png',
     HELMET_BLUE: 'helmet_blue.png',
-    TILE_FLOOR: 'tile_floor.png',
+    TILE_FLOOR: 'tile_ground.png',
     TILE_WALL: 'tile_wall.png',
     TILE_RAMP: 'tile_ramp.png'
   } as const;
@@ -136,7 +136,7 @@ npm 6 не поддерживает workspaces, поэтому сборка бу
     constructor() { super('GameScene'); }
     preload() {
       this.load.image('floor', `assets/${ASSET_NAMES.TILE_FLOOR}`);
-      this.load.spritesheet('player_run', `assets/${ASSET_NAMES.PLAYER_RUN}`, { frameWidth: 32, frameHeight: 48 });
+      this.load.spritesheet('player_run', `assets/${ASSET_NAMES.PLAYER_RUN}`, { frameWidth: 49, frameHeight: 58 });
       this.load.image('player_idle', `assets/${ASSET_NAMES.PLAYER_IDLE}`);
     }
     create() {
@@ -147,7 +147,7 @@ npm 6 не поддерживает workspaces, поэтому сборка бу
     update() {}
   }
   ```
-- Положить заглушки `player_idle.png`, `player_run.png` (можно временные пиксельные) в `client/assets/`.
+- Положить заглушки `player_base.png`, `player_run.png` (можно временные пиксельные) в `client/assets/`.
 
 **🏗 Архитектурный контекст:**  
 Phaser берёт на себя рендер, цикл обновления и базовую физику. Сервер не участвует. Debug-физика пока выключена, но включится в задаче 29.
