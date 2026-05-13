@@ -38,11 +38,12 @@ Spec требует ограничивать FOV именно зумом, а н�
   ```ts
   enum Phase { LOBBY, FIGHT, PAUSE }
   let phase = Phase.LOBBY;
-  let timer = 0;
+  let timer = 600;
   setInterval(() => {
-    timer += 1;
-    if (phase === Phase.FIGHT && timer >= 600) { phase = Phase.PAUSE; timer = 60; broadcast('phase_change', PAUSE); }
-    else if (phase === Phase.PAUSE && timer <= 0) { phase = Phase.FIGHT; timer = 600; resetState(); broadcast('phase_change', FIGHT); }
+    if (phase === Phase.LOBBY) return;
+    timer -= 1;
+    if (phase === Phase.FIGHT && timer <= 0) { phase = Phase.PAUSE; timer = 60; broadcast('phase_change', PAUSE); }
+    else if (phase === Phase.PAUSE && timer <= 0) { resetState(); phase = Phase.FIGHT; timer = 600; broadcast('phase_change', FIGHT); }
   }, 1000);
   ```
 - Клиент слушает `EventPayload({type:'phase_change'})`:
@@ -132,7 +133,7 @@ Spec чётко разделяет киллы и смерти от среды. �
 **🎯 Цель:** Реализовать парольную админ-панель: кнопки `Пересоздать`, `Автобаланс`, контроль разницы в командах, логирование действий в чат.
 
 **🛠 Техническая реализация:**
-- Клиент `AdminPanel.ts`: скрыт по умолчанию. Открывается по `/admin` или хоткею `~`. Ввод пароля → `room.send(msgpack.encode({type:'admin_auth', password}))`.
+- Клиент `AdminPanel.ts`: скрыт по умолчанию. Открывается по `/admin` или хоткею `~`. Ввод пароля → `room.send('admin_auth', { password })`.
 - Сервер `AdminController.ts`:
   ```ts
   const ADMIN_PASS_HASH = '...'; // простое сравнение или хеш
@@ -154,7 +155,7 @@ Spec чётко разделяет киллы и смерти от среды. �
 - Клиент рендерит UI только для `isAdmin=true`, кнопки вызывают `AdminCommand`. Все действия логируются в системный чат: `"[ADMIN] Match restarted by Nick"`.
 
 **🏗 Архитектурный контекст:**  
-Spec требует, чтобы любой знающий пароль мог управлять сессией. Валидация строго на сервере. Автобаланс работает в реальном времени, ограничивая разницу в 1-2 игрока. Команды отправляются через `msgpack-lite`, размер пакета ~16 байт.
+Spec требует, чтобы любой знающий пароль мог управлять сессией. Валидация строго на сервере. Автобаланс работает в реальном времени, ограничивая разницу в 1-2 игрока. Админ-команды редкие, поэтому их не нужно оптимизировать раньше боевого трафика.
 
 **✅ Результат / Как тестировать:**
 - Ввод верного пароля → появляются кнопки админа.

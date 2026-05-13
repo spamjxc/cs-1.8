@@ -22,7 +22,7 @@
     }
   }
   ```
-- Корневой `tsconfig.json`: `{ "strict": true, "target": "ES2020", "module": "CommonJS", "esModuleInterop": true, "skipLibCheck": true }`
+- Корневой `tsconfig.json`: `{ "strict": true, "target": "ES2019", "module": "CommonJS", "esModuleInterop": true, "skipLibCheck": true }`
 - `.gitignore`: `node_modules/`, `dist/`, `shared/dist/`, `*.tsbuildinfo`, `.env`
 
 **🏗 Архитектурный контекст:**  
@@ -39,13 +39,14 @@ npm 6 не поддерживает workspaces, поэтому сборка бу
 **🎯 Цель:** Поднять dev-среду: клиент на `:5173` с HMR, сервер на `:3000` отдаёт статику и проксирует запросы.
 
 **🛠 Техническая реализация:**
-- `npm i -D typescript vite@2.9.18 express@4.18.2 concurrently@9 tsc-watch@2.5`
+- Runtime-зависимости: `npm i phaser@3.60.0 express@4.18.2 serve-static@1.15.0 colyseus@0.14.20 @colyseus/ws-transport@0.14.20 @colyseus/schema@1.0.40 colyseus.js@0.14 msgpack-lite@0.1.13`
+- Dev-зависимости под Node 12: `npm i -D typescript@4.9.5 vite@2.9.18 concurrently@7.0.0 tsc-watch@6.2.1 @types/express@4.17.21`
 - `client/vite.config.ts`:
   ```ts
   import { defineConfig } from 'vite';
   export default defineConfig({
     root: './client',
-    build: { outDir: '../dist/client', emptyOutDir: true },
+    build: { outDir: '../dist/client', emptyOutDir: true, target: 'es2019' },
     server: { port: 5173, proxy: { '/api': 'http://localhost:3000' } }
   });
   ```

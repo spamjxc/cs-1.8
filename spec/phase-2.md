@@ -14,13 +14,12 @@
   ```
 - В `GameScene.update()`:
   ```ts
-  const jumpPressed = this.keys.JUMP.isDown;
+  const jumpPressed = Phaser.Input.Keyboard.JustDown(this.keys.JUMP);
   const isGrounded = this.player.body.touching.down;
 
   if (jumpPressed && this.jumpsLeft > 0) {
     this.player.setVelocityY(PHYSICS.JUMP_FORCE);
     this.jumpsLeft--;
-    this.keys.JUMP.isDown = false; // блокируем зажатие
   }
 
   if (isGrounded) this.jumpsLeft = 2;
@@ -82,14 +81,14 @@
 **🎯 Цель:** Привязать направление взгляда и оружия к курсору мыши. Обеспечить плавное вращение без дёргания и артефактов физики.
 
 **🛠 Техническая реализация:**
-- В `GameScene.create()` создать контейнер оружия:
+- В `GameScene.create()` создать отдельный спрайт оружия и каждый кадр позиционировать его рядом с игроком:
   ```ts
-  this.weapon = this.add.sprite(0, -15, 'weapon_pistol');
-  this.player.add(this.weapon); // привязка к игроку
+  this.weapon = this.add.sprite(this.player.x, this.player.y - 15, 'weapon_pistol');
   ```
 - В `GameScene.update()`:
   ```ts
   const pointer = this.input.activePointer;
+  this.weapon.setPosition(this.player.x, this.player.y - 15);
   const angle = Phaser.Math.Angle.Between(
     this.player.x, this.player.y,
     pointer.worldX, pointer.worldY
@@ -98,7 +97,7 @@
   // Зеркалирование оружия при взгляде влево
   this.weapon.setScaleX(pointer.x < this.player.x ? -1 : 1);
   ```
-- Хитбокс игрока остаётся вертикальным (Arcade Physics не любит вращение тел), вращается только визуальный контейнер.
+- Хитбокс игрока остаётся вертикальным (Arcade Physics не любит вращение тел), вращается только визуальное оружие. Если позже нужен полноценный составной персонаж, использовать `Container`, но не вызывать `this.player.add(...)` у physics sprite: у него такого API нет.
 
 **🏗 Архитектурный контекст:**  
 Phaser Arcade оптимизирован под AABB-коллизии. Вращение хитбокса вызовет нестабильность. Поэтому физическое тело игрока остаётся вертикальным, а оружие/рука вращаются как дочерний визуальный объект. Это стандартная практика для 2D-платформеров.
