@@ -41,6 +41,7 @@ export class GameRoom extends GameRoomLifecycle {
   onCreate(): void {
     this.setState(new RoomState());
     this.state.mapSeed = Date.now() % 1000000;
+    this.setMetadata({ autoBalance: this.state.autoBalance });
     this.createInitialPickups();
     this.setSimulationInterval(() => this.tick(), NETWORK.TICK_MS);
     this.onMessage('input', (client, data: InputCommand) => this.handleInput(client, data));
@@ -186,6 +187,14 @@ export class GameRoom extends GameRoomLifecycle {
     }
 
     runtime.lastShotAt = now;
+    this.broadcastEvent({
+      type: 'shoot',
+      ownerId: player.id,
+      weapon: data.weapon,
+      x: player.x,
+      y: player.y,
+      aimAngle: player.aimAngle
+    });
   }
 
   private handleExplosion(client: Client, data: ExplosionEvent): void {

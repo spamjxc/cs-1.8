@@ -7,17 +7,17 @@ const distScriptsPath = path.join(distPath, 'scripts');
 
 const defaultConfig = {
   server: {
-    host: '127.0.0.1',
+    host: '0.0.0.0',
     port: 3000
   },
   client: {
     protocol: 'http',
-    host: '127.0.0.1',
-    port: 3010
+    host: 'localhost',
+    port: 3000
   },
   websocket: {
     protocol: 'ws',
-    host: '127.0.0.1',
+    host: 'auto',
     port: 3000,
     path: ''
   }

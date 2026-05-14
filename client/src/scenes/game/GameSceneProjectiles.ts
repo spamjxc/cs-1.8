@@ -43,6 +43,7 @@ export abstract class GameSceneProjectiles extends GameSceneWeaponInput {
     projectile.setData('damage', projectileConfig.damage);
     projectile.setData('weapon', firingWeapon);
     projectile.setData('explosive', firingWeapon === 'rpg');
+    projectile.setData('remote', false);
     projectile.setData('hitSent', false);
     projectile.setData('previousX', startX);
     projectile.setData('previousY', startY);
@@ -81,6 +82,7 @@ export abstract class GameSceneProjectiles extends GameSceneWeaponInput {
     projectile.setData('damage', WEAPONS.GRENADE.damage);
     projectile.setData('weapon', firingWeapon);
     projectile.setData('explosive', true);
+    projectile.setData('remote', false);
     projectile.setData('hitSent', false);
     projectile.setData('previousX', startX);
     projectile.setData('previousY', startY);
@@ -206,6 +208,10 @@ export abstract class GameSceneProjectiles extends GameSceneWeaponInput {
         return true;
       }
 
+      if (projectile.getData('remote')) {
+        return true;
+      }
+
       const previousX = Number(projectile.getData('previousX'));
       const previousY = Number(projectile.getData('previousY'));
 
@@ -254,6 +260,11 @@ export abstract class GameSceneProjectiles extends GameSceneWeaponInput {
     }
 
     const projectile = projectileObject as Phaser.Physics.Arcade.Sprite;
+    if (projectile.getData('remote')) {
+      this.disableProjectile(projectile);
+      return;
+    }
+
     this.triggerProjectileExplosion(projectile);
     this.disableProjectile(projectile);
   }
@@ -267,6 +278,10 @@ export abstract class GameSceneProjectiles extends GameSceneWeaponInput {
     }
 
     const projectile = projectileObject as Phaser.Physics.Arcade.Sprite;
+    if (projectile.getData('remote')) {
+      return;
+    }
+
     const target = playerObject as Phaser.Physics.Arcade.Sprite;
     const targetId = target.getData('playerId') as string | undefined;
     const remote = targetId ? this.remotePlayers.get(targetId) : undefined;
@@ -331,7 +346,7 @@ export abstract class GameSceneProjectiles extends GameSceneWeaponInput {
         projectile.y > camera.worldView.bottom + 300;
 
       if (expired || outsideWorld) {
-        if (projectile.getData('explosive')) {
+        if (projectile.getData('explosive') && !projectile.getData('remote')) {
           this.triggerProjectileExplosion(projectile);
         }
         this.disableProjectile(projectile);
@@ -405,5 +420,43 @@ export abstract class GameSceneProjectiles extends GameSceneWeaponInput {
     const poseConfig = GAME_CONFIG.WEAPONS.HAND_POSE[WEAPON_POSE_KEYS[weapon]];
     this.weapon.setOrigin(poseConfig.ORIGIN_X, 0.5);
     this.weapon.setScale(poseConfig.DISPLAY_SCALE);
+  }
+
+  protected spawnRemoteProjectile(ownerId: string | undefined, weapon: WeaponKind | undefined, x: number, y: number, aimAngle: number): void {
+    if (!ownerId || !weapon || weapon === 'fist') {
+      return;
+    }
+
+    const projectile = this.obtainProjectile();
+    if (!projectile) {
+      return;
+    }
+
+    const startX = x + Math.cos(aimAngle) * 28;
+    const startY = y - 8 + Math.sin(aimAngle) * 10;
+    const isRocket = weapon === 'rpg';
+    const isGrenade = weapon === 'grenade';
+    const texture = isGrenade
+      ? SPRITE_KEYS.PROJECTILE_GRENADE
+      : isRocket ? SPRITE_KEYS.PROJECTILE_ROCKET : SPRITE_KEYS.PROJECTILE_BULLET;
+    const directConfig = this.getDirectProjectileConfig(weapon);
+    const speed = isGrenade
+      ? GAME_CONFIG.WEAPONS.GRENADE_THROW.MAX_THROW_FORCE * 0.82
+      : directConfig.speed;
+
+    projectile.setTexture(texture);
+    projectile.setPosition(startX, startY);
+    projectile.setRotation(aimAngle);
+    projectile.setVelocity(Math.cos(aimAngle) * speed, Math.sin(aimAngle) * speed);
+    (projectile.body as Phaser.Physics.Arcade.Body).setAllowGravity(isGrenade);
+    this.resizeProjectileBody(projectile);
+    projectile.setData('expiresAt', this.time.now + (isGrenade ? 2600 : 2000));
+    projectile.setData('damage', directConfig.damage);
+    projectile.setData('weapon', weapon);
+    projectile.setData('explosive', isGrenade || isRocket);
+    projectile.setData('remote', true);
+    projectile.setData('hitSent', false);
+    projectile.setData('previousX', startX);
+    projectile.setData('previousY', startY);
   }
 }

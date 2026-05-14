@@ -58,12 +58,13 @@ export type StatsPacket = {
 };
 
 export type GameEventPayload = {
-  type: 'hit' | 'death' | 'respawn' | 'baseDamage' | 'explode' | 'pickup' | 'ammo' | 'phase_change' | 'stats' | 'admin' | 'chat';
+  type: 'hit' | 'death' | 'respawn' | 'baseDamage' | 'explode' | 'pickup' | 'ammo' | 'shoot' | 'phase_change' | 'stats' | 'admin' | 'chat';
   targetId?: string;
   hp?: number;
   ghostTimer?: number;
   x?: number;
   y?: number;
+  aimAngle?: number;
   radius?: number;
   knockback?: number;
   damage?: number;

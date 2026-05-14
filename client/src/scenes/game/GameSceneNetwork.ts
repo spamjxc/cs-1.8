@@ -108,6 +108,8 @@ export abstract class GameSceneNetwork extends Phaser.Scene {
     if (this.network && id === this.network.getSessionId()) {
       this.localHp = player.hp;
       this.localGhost = Boolean(player.ghost);
+      this.team = player.team === TEAM.BLUE ? TEAM.BLUE : TEAM.RED;
+      this.helmet?.setTexture(this.team === TEAM.RED ? SPRITE_KEYS.HELMET_RED : SPRITE_KEYS.HELMET_BLUE);
       this.syncLocalWeapon(player);
       this.applyLocalServerState(player);
       return;
@@ -232,8 +234,9 @@ export abstract class GameSceneNetwork extends Phaser.Scene {
       remote.visual.setFlipX(remote.lastVx < -10);
     } else if (Math.abs(remote.lastVx) > 10) {
       remote.visual.setScale(1, 1);
-      remote.visual.setTexture(SPRITE_KEYS.PLAYER_RUN);
-      remote.visual.anims.play(ANIMATION_KEYS.PLAYER_RUN, true);
+      if (!remote.visual.anims.isPlaying || remote.visual.anims.currentAnim?.key !== ANIMATION_KEYS.PLAYER_RUN) {
+        remote.visual.play(ANIMATION_KEYS.PLAYER_RUN);
+      }
       remote.visual.setFlipX(remote.lastVx < 0);
     } else {
       remote.visual.setScale(1, 1);
@@ -347,6 +350,19 @@ export abstract class GameSceneNetwork extends Phaser.Scene {
 
     if (event.type === 'chat' && event.message) {
       this.addChatMessage(event.message);
+      return;
+    }
+
+    if (event.type === 'shoot') {
+      if (!this.network || event.ownerId !== this.network.getSessionId()) {
+        this.spawnRemoteProjectile(
+          event.ownerId,
+          event.weapon,
+          this.toFiniteNumber(event.x, 0),
+          this.toFiniteNumber(event.y, 0),
+          this.toFiniteNumber(event.aimAngle, 0)
+        );
+      }
       return;
     }
 
