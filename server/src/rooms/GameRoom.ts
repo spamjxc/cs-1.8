@@ -41,7 +41,7 @@ export class GameRoom extends GameRoomLifecycle {
   onCreate(): void {
     this.setState(new RoomState());
     this.state.mapSeed = Date.now() % 1000000;
-    this.setMetadata({ autoBalance: this.state.autoBalance });
+    this.updateRoomMetadata();
     this.createInitialPickups();
     this.setSimulationInterval(() => this.tick(), NETWORK.TICK_MS);
     this.onMessage('input', (client, data: InputCommand) => this.handleInput(client, data));
@@ -81,6 +81,7 @@ export class GameRoom extends GameRoomLifecycle {
       pickedDuringCurrentCrouch: false,
       lastDamageSourceId: undefined
     });
+    this.updateRoomMetadata();
 
     console.log(`Player joined: ${nick} (${team}) [${client.sessionId}]`);
     this.broadcastEvent({ type: 'chat', message: `${nick} joined ${team}` });
@@ -93,6 +94,7 @@ export class GameRoom extends GameRoomLifecycle {
     this.state.players.delete(client.sessionId);
     this.runtime.delete(client.sessionId);
     this.admins.delete(client.sessionId);
+    this.updateRoomMetadata();
     console.log(`Player left: ${client.sessionId}`);
   }
 

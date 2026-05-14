@@ -12,12 +12,20 @@ import { ANIMATION_KEYS, SPRITE_KEYS, WEAPON_POSE_KEYS } from './GameSceneConfig
 export abstract class GameSceneNetwork extends Phaser.Scene {
   protected configureCamera(): void {
     const camera = this.cameras.main;
+    const width = this.scale.width || window.innerWidth || 1280;
+    const height = this.scale.height || window.innerHeight || 720;
+    const isSmallScreen = width <= GAME_CONFIG.MOBILE.SMALL_SCREEN_WIDTH ||
+      height <= GAME_CONFIG.MOBILE.SMALL_SCREEN_HEIGHT;
 
-    camera.setZoom(GAME_CONFIG.CAMERA.ZOOM);
+    camera.setZoom(isSmallScreen
+      ? GAME_CONFIG.CAMERA.MOBILE_ZOOM / GAME_CONFIG.CAMERA.MOBILE_ZOOM_DIVISOR
+      : GAME_CONFIG.CAMERA.ZOOM);
     camera.setDeadzone(200, 150);
     camera.setBounds(0, 0, MAP.WIDTH, MAP.HEIGHT);
     camera.setBackgroundColor('#1a1a1a');
     this.physics.world.setBounds(0, 0, MAP.WIDTH, MAP.HEIGHT);
+    this.baseWarning?.setPosition(width / 2, height / 2);
+    this.baseWarning?.setSize(width, height);
   }
 
   protected addBaseZones(): void {
@@ -85,14 +93,17 @@ export abstract class GameSceneNetwork extends Phaser.Scene {
     }
 
     const body = this.player.body as Phaser.Physics.Arcade.Body;
-    const moveLeft = this.keys.A.isDown || this.cursors.left.isDown;
-    const moveRight = this.keys.D.isDown || this.cursors.right.isDown;
-    const move = moveLeft ? -1 : moveRight ? 1 : 0;
-    const aimAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y - 8, this.input.activePointer.worldX, this.input.activePointer.worldY);
+    if (!this.hasReceivedLocalState) {
+      return;
+    }
+
+    const move = this.getHorizontalMoveDirection();
+    const aimTarget = this.getCurrentAimTarget();
+    const aimAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y - 8, aimTarget.worldX, aimTarget.worldY);
 
     this.network.sendInput(this.time.now, {
       move,
-      jump: this.keys.W.isDown || this.keys.SPACE.isDown || this.cursors.up.isDown,
+      jump: this.isJumpInputDown(),
       crouch: Boolean(this.player.getData('crouching')),
       click: false,
       pickup: false,
@@ -106,6 +117,7 @@ export abstract class GameSceneNetwork extends Phaser.Scene {
 
   protected syncNetworkPlayer(player: any, id: string): void {
     if (this.network && id === this.network.getSessionId()) {
+      this.hasReceivedLocalState = true;
       this.localHp = player.hp;
       this.localGhost = Boolean(player.ghost);
       this.team = player.team === TEAM.BLUE ? TEAM.BLUE : TEAM.RED;
@@ -367,7 +379,7 @@ export abstract class GameSceneNetwork extends Phaser.Scene {
     }
 
     if (event.type === 'explode') {
-      this.spawnExplosion(event.x || 0, event.y || 0, event.weapon);
+      this.spawnExplosion(event.x || 0, event.y || 0, event.weapon, event.radius);
       this.applyExplosionKnockback(event.x || 0, event.y || 0, event.radius || 0, event.knockback || 0);
       return;
     }

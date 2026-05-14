@@ -11,6 +11,11 @@ import { GameSceneStateVisual } from './GameSceneStateVisual';
 
 export abstract class GameSceneWeaponInput extends GameSceneStateVisual {
   protected handlePointerDown(pointer: Phaser.Input.Pointer): void {
+    if (this.shouldUseMobileControls()) {
+      this.handleMobilePointerDown(pointer);
+      return;
+    }
+
     if (this.localGhost) {
       return;
     }
@@ -40,6 +45,11 @@ export abstract class GameSceneWeaponInput extends GameSceneStateVisual {
   }
 
   protected handlePointerUp(pointer: Phaser.Input.Pointer): void {
+    if (this.shouldUseMobileControls()) {
+      this.handleMobilePointerUp(pointer);
+      return;
+    }
+
     if (this.isAutoFiring) {
       this.stopAutoFire();
       return;
@@ -54,6 +64,87 @@ export abstract class GameSceneWeaponInput extends GameSceneStateVisual {
     this.chargeBar.clear();
   }
 
+  protected handlePointerMove(pointer: Phaser.Input.Pointer): void {
+    if (!this.shouldUseMobileControls()) {
+      return;
+    }
+
+    const pointerId = this.getPointerId(pointer);
+    if (this.mobileMovePointerId === pointerId) {
+      this.updateMobileMove(pointer);
+      return;
+    }
+
+    if (this.mobileFirePointerId === pointerId) {
+      this.setMobileAimFromPointer(pointer);
+      this.drawMobileControls();
+    }
+  }
+
+  protected handleMobilePointerDown(pointer: Phaser.Input.Pointer): void {
+    if (this.localGhost || pointer.rightButtonDown()) {
+      return;
+    }
+
+    const pointerId = this.getPointerId(pointer);
+    if (this.mobileMovePointerId === undefined) {
+      this.startMobileMove(pointer);
+      return;
+    }
+
+    if (this.mobileMovePointerId === pointerId || this.mobileFirePointerId !== undefined) {
+      return;
+    }
+
+    this.mobileFirePointerId = pointerId;
+    this.setMobileAimFromPointer(pointer);
+    this.drawMobileControls();
+
+    if (this.currentWeapon === 'grenade') {
+      this.stopAutoFire();
+      this.isChargingGrenade = true;
+      this.grenadeChargeStartedAt = this.time.now;
+      return;
+    }
+
+    if (this.currentWeapon === 'auto') {
+      this.startAutoFire(this.mobileAimTarget);
+      return;
+    }
+
+    if (this.currentWeapon === 'fist') {
+      this.swingFist();
+      return;
+    }
+
+    this.fireDirectProjectile(this.mobileAimTarget);
+  }
+
+  protected handleMobilePointerUp(pointer: Phaser.Input.Pointer): void {
+    const pointerId = this.getPointerId(pointer);
+
+    if (this.mobileMovePointerId === pointerId) {
+      this.stopMobileMove();
+      return;
+    }
+
+    if (this.mobileFirePointerId !== pointerId) {
+      return;
+    }
+
+    this.setMobileAimFromPointer(pointer);
+
+    if (this.isAutoFiring) {
+      this.stopAutoFire();
+    } else if (this.isChargingGrenade && this.currentWeapon === 'grenade') {
+      this.throwGrenade(this.mobileAimTarget);
+      this.isChargingGrenade = false;
+      this.chargeBar.clear();
+    }
+
+    this.stopMobileFire();
+  }
+
   protected installWindowMouseListeners(): void {
     window.addEventListener('mousedown', this.windowMouseDownHandler);
     window.addEventListener('mouseup', this.windowMouseUpHandler);
@@ -65,6 +156,10 @@ export abstract class GameSceneWeaponInput extends GameSceneStateVisual {
   }
 
   protected handleWindowMouseDown(event: MouseEvent): void {
+    if (this.shouldUseMobileControls()) {
+      return;
+    }
+
     if (this.localGhost) {
       return;
     }
@@ -96,6 +191,10 @@ export abstract class GameSceneWeaponInput extends GameSceneStateVisual {
   }
 
   protected handleWindowMouseUp(event: MouseEvent): void {
+    if (this.shouldUseMobileControls()) {
+      return;
+    }
+
     if (event.button === 0 && this.isAutoFiring) {
       this.stopAutoFire();
       return;
@@ -143,7 +242,13 @@ export abstract class GameSceneWeaponInput extends GameSceneStateVisual {
     }
 
     const pointer = this.input.activePointer;
-    if (!pointer.isDown && !this.autoFireTarget) {
+    const mobileTarget = this.shouldUseMobileControls() ? this.mobileAimTarget : undefined;
+    if (this.shouldUseMobileControls() && (this.mobileFirePointerId === undefined || !mobileTarget)) {
+      this.stopAutoFire();
+      return;
+    }
+
+    if (!this.shouldUseMobileControls() && !pointer.isDown && !this.autoFireTarget) {
       this.stopAutoFire();
       return;
     }
@@ -152,9 +257,9 @@ export abstract class GameSceneWeaponInput extends GameSceneStateVisual {
       return;
     }
 
-    const target = pointer.isDown
+    const target = mobileTarget || (pointer.isDown
       ? { worldX: pointer.worldX, worldY: pointer.worldY }
-      : this.autoFireTarget;
+      : this.autoFireTarget);
 
     if (!target) {
       this.stopAutoFire();

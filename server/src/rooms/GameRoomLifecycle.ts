@@ -5,6 +5,7 @@ import { PlayerSchema } from '@shared/schemas/PlayerSchema';
 import { RoomState } from '@shared/schemas/RoomState';
 import { AdminAuthEvent, AdminCommandEvent, GameEventPayload, StatsPacket, TeamId, WeaponId } from '@shared/types/network';
 import { getPlayerSpawnY } from '@shared/utils/MapGeometry';
+import { loadRuntimeConfig } from '../runtimeConfig';
 
 export abstract class GameRoomLifecycle extends Room<RoomState> {
   protected updateGhost(player: PlayerSchema): void {
@@ -225,7 +226,7 @@ export abstract class GameRoomLifecycle extends Room<RoomState> {
 
   protected handleAdminAuth(client: Client, data: AdminAuthEvent): void {
     const password = data && typeof data.password === 'string' ? data.password : '';
-    if (password !== ADMIN_CONFIG.PASSWORD) {
+    if (password !== this.getAdminPassword()) {
       this.broadcastEvent({ type: 'admin', targetId: client.sessionId, message: 'auth_failed' });
       return;
     }
@@ -237,6 +238,11 @@ export abstract class GameRoomLifecycle extends Room<RoomState> {
       message: 'granted',
       autoBalance: this.state.autoBalance
     });
+  }
+
+  protected getAdminPassword(): string {
+    const runtimePassword = loadRuntimeConfig().admin.password;
+    return runtimePassword || ADMIN_CONFIG.PASSWORD;
   }
 
   protected handleAdminCommand(client: Client, data: AdminCommandEvent): void {
@@ -251,7 +257,7 @@ export abstract class GameRoomLifecycle extends Room<RoomState> {
       this.broadcastEvent({ type: 'chat', message: `[ADMIN] Match restarted by ${nick}` });
     } else if (data.type === 'toggle_balance') {
       this.state.autoBalance = !this.state.autoBalance;
-      this.setMetadata({ autoBalance: this.state.autoBalance });
+      this.updateRoomMetadata();
       this.broadcastEvent({
         type: 'admin',
         message: 'balance_toggled',
@@ -259,6 +265,14 @@ export abstract class GameRoomLifecycle extends Room<RoomState> {
       });
       this.broadcastEvent({ type: 'chat', message: `[ADMIN] Auto balance ${this.state.autoBalance ? 'enabled' : 'disabled'} by ${nick}` });
     }
+  }
+
+  protected updateRoomMetadata(): void {
+    this.setMetadata({
+      autoBalance: this.state.autoBalance,
+      redCount: this.countTeam(TEAM.RED),
+      blueCount: this.countTeam(TEAM.BLUE)
+    });
   }
 
   protected getBalancedTeam(requestedTeam: TeamId): TeamId {

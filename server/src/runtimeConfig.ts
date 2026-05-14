@@ -17,6 +17,9 @@ export type RuntimeConfig = {
     port: number;
     path: string;
   };
+  admin: {
+    password: string;
+  };
 };
 
 const DEFAULT_CONFIG: RuntimeConfig = {
@@ -34,6 +37,9 @@ const DEFAULT_CONFIG: RuntimeConfig = {
     host: 'auto',
     port: 3000,
     path: ''
+  },
+  admin: {
+    password: 'radiation'
   }
 };
 
@@ -86,6 +92,7 @@ function normalizeConfig(value: unknown): RuntimeConfig {
   const server = isRecord(source.server) ? source.server : {};
   const client = isRecord(source.client) ? source.client : {};
   const websocket = isRecord(source.websocket) ? source.websocket : {};
+  const admin = isRecord(source.admin) ? source.admin : {};
 
   const serverPort = toPort(server.port, DEFAULT_CONFIG.server.port);
 
@@ -104,6 +111,9 @@ function normalizeConfig(value: unknown): RuntimeConfig {
       host: toStringValue(websocket.host, DEFAULT_CONFIG.websocket.host),
       port: toPort(websocket.port, serverPort),
       path: toStringValue(websocket.path, DEFAULT_CONFIG.websocket.path)
+    },
+    admin: {
+      password: toStringValue(admin.password, DEFAULT_CONFIG.admin.password)
     }
   };
 }

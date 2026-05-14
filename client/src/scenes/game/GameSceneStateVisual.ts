@@ -21,6 +21,281 @@ export abstract class GameSceneStateVisual extends GameSceneAdmin {
       (this.team === TEAM.RED && this.player.x > MAP.WIDTH - MAP.BASE_WIDTH);
   }
 
+  protected createMobileControls(): void {
+    this.input.addPointer(3);
+    this.mobileStickGraphics = this.add.graphics().setScrollFactor(0).setDepth(1002);
+    this.mobileFireGraphics = this.add.graphics().setScrollFactor(0).setDepth(1003);
+    this.refreshMobileControlsMode();
+
+    if (this.game.canvas) {
+      this.game.canvas.style.touchAction = 'none';
+    }
+  }
+
+  protected refreshMobileControlsMode(): void {
+    const width = this.scale.width || window.innerWidth || 1280;
+    const height = this.scale.height || window.innerHeight || 720;
+    const shouldEnable = width <= GAME_CONFIG.MOBILE.SMALL_SCREEN_WIDTH ||
+      height <= GAME_CONFIG.MOBILE.SMALL_SCREEN_HEIGHT;
+
+    if (shouldEnable === this.mobileControlsEnabled) {
+      return;
+    }
+
+    this.mobileControlsEnabled = shouldEnable;
+    if (!shouldEnable) {
+      this.resetMobileControls();
+    }
+  }
+
+  protected shouldUseMobileControls(): boolean {
+    return Boolean(this.mobileControlsEnabled);
+  }
+
+  protected updateMobileControls(): void {
+    if (!this.shouldUseMobileControls()) {
+      return;
+    }
+
+    if (this.mobileUpHeld && this.time.now >= this.mobileNextHeldJumpAt) {
+      this.mobileJumpQueued = true;
+      this.mobileNextHeldJumpAt = this.time.now + GAME_CONFIG.MOBILE.DOUBLE_JUMP_DELAY_MS;
+    }
+
+    this.drawMobileControls();
+  }
+
+  protected resetMobileControls(): void {
+    this.mobileMovePointerId = undefined;
+    this.mobileFirePointerId = undefined;
+    this.mobileMoveVector.set(0, 0);
+    this.mobileUpHeld = false;
+    this.mobileJumpQueued = false;
+    this.mobileAimTarget = undefined;
+    this.mobileStickGraphics?.clear();
+    this.mobileFireGraphics?.clear();
+    this.stopAutoFire?.();
+    this.isChargingGrenade = false;
+    this.chargeBar?.clear();
+  }
+
+  protected destroyMobileControls(): void {
+    this.resetMobileControls();
+    this.mobileStickGraphics?.destroy();
+    this.mobileFireGraphics?.destroy();
+    this.mobileStickGraphics = undefined;
+    this.mobileFireGraphics = undefined;
+  }
+
+  protected getPointerId(pointer: Phaser.Input.Pointer): number {
+    return typeof pointer.pointerId === 'number' ? pointer.pointerId : pointer.id;
+  }
+
+  protected getTargetFromPointer(pointer: Phaser.Input.Pointer): AimTarget {
+    const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+
+    return {
+      worldX: worldPoint.x,
+      worldY: worldPoint.y
+    };
+  }
+
+  protected startMobileMove(pointer: Phaser.Input.Pointer): void {
+    const pointerId = this.getPointerId(pointer);
+    this.mobileMovePointerId = pointerId;
+    this.mobileStickBase.set(pointer.x, pointer.y);
+    this.mobileStickKnob.copy(this.mobileStickBase);
+    this.mobileMoveVector.set(0, 0);
+    this.mobileUpHeld = false;
+    this.mobileJumpQueued = false;
+    this.drawMobileControls();
+  }
+
+  protected updateMobileMove(pointer: Phaser.Input.Pointer): void {
+    const config = GAME_CONFIG.MOBILE;
+    const stickRadius = this.getMobileStickRadius();
+    const dx = pointer.x - this.mobileStickBase.x;
+    const dy = pointer.y - this.mobileStickBase.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const maxDistance = stickRadius;
+    const clampedDistance = Math.min(distance, maxDistance);
+    const angle = Math.atan2(dy, dx);
+    const normalizer = distance > config.STICK_DEADZONE ? maxDistance : 1;
+
+    this.mobileStickKnob.set(
+      this.mobileStickBase.x + Math.cos(angle) * clampedDistance,
+      this.mobileStickBase.y + Math.sin(angle) * clampedDistance
+    );
+
+    if (distance <= config.STICK_DEADZONE) {
+      this.mobileMoveVector.set(0, 0);
+    } else {
+      this.mobileMoveVector.set(
+        Phaser.Math.Clamp(dx / normalizer, -1, 1),
+        Phaser.Math.Clamp(dy / normalizer, -1, 1)
+      );
+    }
+
+    const upHeld = this.mobileMoveVector.y <= config.JUMP_THRESHOLD;
+    if (upHeld && !this.mobileUpHeld) {
+      this.mobileJumpQueued = true;
+      this.mobileNextHeldJumpAt = this.time.now + config.DOUBLE_JUMP_DELAY_MS;
+    }
+
+    this.mobileUpHeld = upHeld;
+  }
+
+  protected stopMobileMove(): void {
+    this.mobileMovePointerId = undefined;
+    this.mobileMoveVector.set(0, 0);
+    this.mobileUpHeld = false;
+    this.mobileJumpQueued = false;
+
+    if (this.mobileFirePointerId !== undefined) {
+      this.mobileFirePointerId = undefined;
+      this.mobileAimTarget = undefined;
+      this.stopAutoFire?.();
+      this.isChargingGrenade = false;
+      this.chargeBar?.clear();
+    }
+
+    this.drawMobileControls();
+  }
+
+  protected setMobileAimFromPointer(pointer: Phaser.Input.Pointer): void {
+    this.mobileAimTarget = this.getTargetFromPointer(pointer);
+    this.lastAimTarget = this.mobileAimTarget;
+  }
+
+  protected stopMobileFire(): void {
+    this.mobileFirePointerId = undefined;
+    this.mobileAimTarget = undefined;
+    this.drawMobileControls();
+  }
+
+  protected getHorizontalMoveDirection(): -1 | 0 | 1 {
+    const moveLeft = this.keys.A.isDown || this.cursors.left.isDown ||
+      (this.shouldUseMobileControls() && this.mobileMoveVector.x < -GAME_CONFIG.MOBILE.MOVE_THRESHOLD);
+    const moveRight = this.keys.D.isDown || this.cursors.right.isDown ||
+      (this.shouldUseMobileControls() && this.mobileMoveVector.x > GAME_CONFIG.MOBILE.MOVE_THRESHOLD);
+
+    if (moveLeft) {
+      return -1;
+    }
+
+    if (moveRight) {
+      return 1;
+    }
+
+    return 0;
+  }
+
+  protected getVerticalMoveDirection(): -1 | 0 | 1 {
+    const moveUp = this.keys.W.isDown || this.keys.SPACE.isDown || this.cursors.up.isDown ||
+      (this.shouldUseMobileControls() && this.mobileMoveVector.y < -GAME_CONFIG.MOBILE.MOVE_THRESHOLD);
+    const moveDown = this.keys.S.isDown || this.cursors.down.isDown ||
+      (this.shouldUseMobileControls() && this.mobileMoveVector.y > GAME_CONFIG.MOBILE.MOVE_THRESHOLD);
+
+    if (moveUp) {
+      return -1;
+    }
+
+    if (moveDown) {
+      return 1;
+    }
+
+    return 0;
+  }
+
+  protected consumeMobileJumpRequest(): boolean {
+    const requested = Boolean(this.mobileJumpQueued);
+    this.mobileJumpQueued = false;
+    return requested;
+  }
+
+  protected isJumpInputDown(): boolean {
+    return this.keys.W.isDown || this.keys.SPACE.isDown || this.cursors.up.isDown ||
+      (this.shouldUseMobileControls() && this.mobileUpHeld);
+  }
+
+  protected isCrouchInputDown(): boolean {
+    return this.keys.CTRL.isDown || this.keys.S.isDown || this.cursors.down.isDown ||
+      (this.shouldUseMobileControls() && this.mobileMoveVector.y > GAME_CONFIG.MOBILE.CROUCH_THRESHOLD);
+  }
+
+  protected getCurrentAimTarget(): AimTarget {
+    if (this.shouldUseMobileControls()) {
+      const fallbackSign = this.playerVisual?.flipX ? -1 : 1;
+      const fallback = {
+        worldX: this.player.x + fallbackSign * 160,
+        worldY: this.player.y - 8
+      };
+
+      return this.mobileAimTarget || this.lastAimTarget || fallback;
+    }
+
+    return {
+      worldX: this.input.activePointer.worldX,
+      worldY: this.input.activePointer.worldY
+    };
+  }
+
+  protected drawMobileControls(): void {
+    const stick = this.mobileStickGraphics;
+    const fire = this.mobileFireGraphics;
+
+    stick?.clear();
+    fire?.clear();
+
+    if (!this.shouldUseMobileControls()) {
+      return;
+    }
+
+    if (this.mobileMovePointerId !== undefined && stick) {
+      const radius = this.getMobileStickRadius();
+      const knobRadius = 24 * GAME_CONFIG.MOBILE.STICK_SCALE;
+      stick.fillStyle(0x11180f, 0.52);
+      stick.fillCircle(this.mobileStickBase.x, this.mobileStickBase.y, radius);
+      stick.lineStyle(2, 0x9bdc4a, 0.72);
+      stick.strokeCircle(this.mobileStickBase.x, this.mobileStickBase.y, radius);
+      stick.lineStyle(1, 0xe8f3d0, 0.28);
+      stick.beginPath();
+      stick.moveTo(this.mobileStickBase.x - radius * 0.62, this.mobileStickBase.y);
+      stick.lineTo(this.mobileStickBase.x + radius * 0.62, this.mobileStickBase.y);
+      stick.moveTo(this.mobileStickBase.x, this.mobileStickBase.y - radius * 0.62);
+      stick.lineTo(this.mobileStickBase.x, this.mobileStickBase.y + radius * 0.62);
+      stick.strokePath();
+      stick.fillStyle(0x9bdc4a, 0.32);
+      stick.fillCircle(this.mobileStickKnob.x, this.mobileStickKnob.y, knobRadius);
+      stick.lineStyle(2, 0xe8f3d0, 0.72);
+      stick.strokeCircle(this.mobileStickKnob.x, this.mobileStickKnob.y, knobRadius);
+    }
+
+    if (this.mobileFirePointerId !== undefined && this.mobileAimTarget && fire) {
+      const camera = this.cameras.main;
+      const zoom = camera.zoom || 1;
+      const x = (this.mobileAimTarget.worldX - camera.worldView.x) * zoom;
+      const y = (this.mobileAimTarget.worldY - camera.worldView.y) * zoom;
+
+      fire.lineStyle(2, 0xf1d27a, 0.82);
+      fire.strokeCircle(x, y, 18);
+      fire.beginPath();
+      fire.moveTo(x - 28, y);
+      fire.lineTo(x - 10, y);
+      fire.moveTo(x + 10, y);
+      fire.lineTo(x + 28, y);
+      fire.moveTo(x, y - 28);
+      fire.lineTo(x, y - 10);
+      fire.moveTo(x, y + 10);
+      fire.lineTo(x, y + 28);
+      fire.strokePath();
+    }
+  }
+
+  protected getMobileStickRadius(): number {
+    return GAME_CONFIG.MOBILE.STICK_RADIUS * GAME_CONFIG.MOBILE.STICK_SCALE;
+  }
+
   protected getMapSeed(): number {
     const state = this.room?.state as any;
     return this.toFiniteNumber(state?.mapSeed, MAP.DEFAULT_SEED);
@@ -102,11 +377,11 @@ export abstract class GameSceneStateVisual extends GameSceneAdmin {
 
   protected getWeaponLabel(): string {
     const labels: Record<WeaponKind, string> = {
-      fist: 'Fist',
-      pistol: 'Pistol',
-      auto: 'SMG',
-      grenade: 'Grenade',
-      rpg: 'RPG'
+      fist: 'Кулаки',
+      pistol: 'Пистолет',
+      auto: 'Автомат',
+      grenade: 'Граната',
+      rpg: 'Базука'
     };
 
     return labels[this.currentWeapon];
@@ -158,21 +433,29 @@ export abstract class GameSceneStateVisual extends GameSceneAdmin {
     this.pickedDuringCurrentCrouch = true;
   }
 
-  protected spawnExplosion(x: number, y: number, weapon?: WeaponKind): void {
+  protected spawnExplosion(x: number, y: number, weapon?: WeaponKind, radius?: number): void {
     const explosion = this.explosions.get(x, y, SPRITE_KEYS.EXPLOSION) as Phaser.GameObjects.Sprite | null;
     if (!explosion) {
       return;
     }
 
-    const scaleMultiplier = weapon === 'grenade' ? 2 : 1;
+    const fallbackRadius = weapon === 'grenade'
+      ? GAME_CONFIG.WEAPONS.EXPLOSION.GRENADE_RADIUS
+      : weapon === 'rpg'
+        ? GAME_CONFIG.WEAPONS.EXPLOSION.RPG_RADIUS
+        : ASSET_SPECS.EFFECT.EXPLOSION.width * ASSET_SPECS.EFFECT.EXPLOSION.endScale / 2;
+    const blastRadius = Math.max(1, this.toFiniteNumber(radius, fallbackRadius));
+    const targetScale = (blastRadius * 2) / ASSET_SPECS.EFFECT.EXPLOSION.width;
+    const startScale = targetScale * (ASSET_SPECS.EFFECT.EXPLOSION.startScale / ASSET_SPECS.EFFECT.EXPLOSION.endScale);
+
     explosion.setActive(true).setVisible(true).setPosition(x, y);
-    explosion.setScale(ASSET_SPECS.EFFECT.EXPLOSION.startScale * scaleMultiplier);
+    explosion.setScale(startScale);
     explosion.setAlpha(0.9);
     explosion.setDepth(5);
 
     this.tweens.add({
       targets: explosion,
-      scale: ASSET_SPECS.EFFECT.EXPLOSION.endScale * scaleMultiplier,
+      scale: targetScale,
       alpha: 0,
       duration: ASSET_SPECS.EFFECT.EXPLOSION.durationMs,
       onComplete: () => {
@@ -198,12 +481,8 @@ export abstract class GameSceneStateVisual extends GameSceneAdmin {
 
   protected handleGhostMovement(): void {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
-    const moveLeft = this.keys.A.isDown || this.cursors.left.isDown;
-    const moveRight = this.keys.D.isDown || this.cursors.right.isDown;
-    const moveUp = this.keys.W.isDown || this.keys.SPACE.isDown || this.cursors.up.isDown;
-    const moveDown = this.keys.S.isDown || this.cursors.down.isDown;
-    const x = (moveRight ? 1 : 0) - (moveLeft ? 1 : 0);
-    const y = (moveDown ? 1 : 0) - (moveUp ? 1 : 0);
+    const x = this.getHorizontalMoveDirection();
+    const y = this.getVerticalMoveDirection();
 
     body.setVelocity(x * GAME_CONFIG.PLAYER.GHOST_MOVE_SPEED, y * GAME_CONFIG.PLAYER.GHOST_MOVE_SPEED);
     body.setAllowGravity(false);
@@ -249,7 +528,8 @@ export abstract class GameSceneStateVisual extends GameSceneAdmin {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     const jumpPressed = Phaser.Input.Keyboard.JustDown(this.keys.W) ||
       Phaser.Input.Keyboard.JustDown(this.keys.SPACE) ||
-      Phaser.Input.Keyboard.JustDown(this.cursors.up);
+      Phaser.Input.Keyboard.JustDown(this.cursors.up) ||
+      this.consumeMobileJumpRequest();
 
     if (body.touching.down || body.blocked.down) {
       this.jumpsLeft = 2;
@@ -280,7 +560,7 @@ export abstract class GameSceneStateVisual extends GameSceneAdmin {
   }
 
   protected handleCrouch(): void {
-    const isCrouching = this.keys.CTRL.isDown || this.keys.S.isDown || this.cursors.down.isDown;
+    const isCrouching = this.isCrouchInputDown();
 
     if (isCrouching === this.player.getData('crouching')) {
       return;
@@ -309,12 +589,12 @@ export abstract class GameSceneStateVisual extends GameSceneAdmin {
   }
 
   protected updateAttachedVisuals(): void {
-    const pointer = this.input.activePointer;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     const isCrouching = Boolean(this.player.getData('crouching'));
     const isRunning = !this.localGhost && !isCrouching && Math.abs(body.velocity.x) > 10;
     const moveSign = body.velocity.x < -10 ? -1 : 1;
-    const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y - 8, pointer.worldX, pointer.worldY);
+    const aimTarget = this.getCurrentAimTarget();
+    const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y - 8, aimTarget.worldX, aimTarget.worldY);
     const aimSign = Math.cos(angle) < 0 ? -1 : 1;
     const facingLeft = aimSign < 0;
     const weaponPose = this.getWeaponPose(isCrouching, isRunning, aimSign, moveSign);
