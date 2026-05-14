@@ -15,4 +15,7 @@ export class PlayerSchema extends Schema {
   @type('string') team: TeamId = TEAM.RED;
   @type('boolean') crouch: boolean = false;
   @type('number') lastInputTick: number = 0;
+  @type('string') weapon: string = 'pistol';
+  @type('number') ammo: number = 50;
+  @type('number') aimAngle: number = 0;
 }

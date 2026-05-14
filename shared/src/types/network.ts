@@ -1,6 +1,7 @@
 import { TEAM } from '../constants';
 
 export type TeamId = typeof TEAM.RED | typeof TEAM.BLUE;
+export type WeaponId = 'fist' | 'pistol' | 'auto' | 'grenade' | 'rpg';
 
 export type InputCommand = {
   tick: number;
@@ -13,6 +14,7 @@ export type InputCommand = {
   y: number;
   vx: number;
   vy: number;
+  aimAngle: number;
 };
 
 export type HitEvent = {
@@ -22,11 +24,32 @@ export type HitEvent = {
   damage: number;
 };
 
+export type ExplosionEvent = {
+  weapon: 'grenade' | 'rpg';
+  x: number;
+  y: number;
+};
+
+export type PickupEvent = {
+  pickupId: string;
+  crouch: boolean;
+};
+
+export type ShootEvent = {
+  weapon: Exclude<WeaponId, 'fist'>;
+};
+
 export type GameEventPayload = {
-  type: 'hit' | 'death' | 'respawn' | 'baseDamage';
-  targetId: string;
+  type: 'hit' | 'death' | 'respawn' | 'baseDamage' | 'explode' | 'pickup' | 'ammo';
+  targetId?: string;
   hp?: number;
   ghostTimer?: number;
   x?: number;
   y?: number;
+  radius?: number;
+  knockback?: number;
+  damage?: number;
+  ownerId?: string;
+  weapon?: WeaponId;
+  ammo?: number;
 };

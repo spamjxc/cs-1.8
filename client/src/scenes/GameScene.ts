@@ -1,11 +1,13 @@
 import * as Phaser from 'phaser';
 import type { Room } from 'colyseus.js';
 import { ASSET_NAMES, ASSET_SPECS, GAME, GAME_CONFIG, MAP, TEAM, WEAPONS } from '@shared/constants';
+import { MapBuilder } from '@client/entities/MapBuilder';
+import { getPlayerSpawnY } from '@shared/utils/MapGeometry';
 import { GameSceneData } from '@client/scenes/LobbyScene';
 import { NetworkManager } from '@client/systems/NetworkManager';
 import { Interpolator } from '@client/utils/Interpolator';
 import { StatePredictor } from '@client/utils/StatePredictor';
-import type { GameEventPayload } from '@shared/types/network';
+import type { GameEventPayload, WeaponId } from '@shared/types/network';
 
 type MovementKeys = {
   A: Phaser.Input.Keyboard.Key;
@@ -20,7 +22,7 @@ type MovementKeys = {
   FOUR: Phaser.Input.Keyboard.Key;
 };
 
-type WeaponKind = 'pistol' | 'auto' | 'grenade' | 'rpg';
+type WeaponKind = WeaponId;
 type WeaponPoseKey = 'PISTOL' | 'AUTO' | 'GRENADE' | 'RPG';
 type PosePoint = {
   x: number;
@@ -34,12 +36,17 @@ type AimTarget = {
 type RemotePlayerView = {
   body: Phaser.Physics.Arcade.Sprite;
   visual: Phaser.GameObjects.Sprite;
+  weapon: Phaser.GameObjects.Sprite;
+  fistArm: Phaser.GameObjects.Rectangle;
   helmet: Phaser.GameObjects.Sprite;
   name: Phaser.GameObjects.Text;
   hp?: Phaser.GameObjects.Text;
   interpolator: Interpolator;
   team: typeof TEAM.RED | typeof TEAM.BLUE;
   ghost: boolean;
+  lastVx: number;
+  weaponKind: WeaponKind;
+  aimAngle: number;
 };
 
 const SPRITE_KEYS = {
@@ -49,7 +56,7 @@ const SPRITE_KEYS = {
   PLAYER_DAMAGE: 'player.damage',
   PLAYER_GHOST: 'player.ghost',
   FLOOR: 'tile.floor',
-  WALL: 'tile.wall',
+  BOX: 'cover.box',
   HELMET_RED: 'helmet.red',
   HELMET_BLUE: 'helmet.blue',
   WEAPON_PISTOL: 'weapon.pistol',
@@ -58,14 +65,15 @@ const SPRITE_KEYS = {
   WEAPON_RPG: 'weapon.rpg',
   PROJECTILE_BULLET: 'projectile.bullet',
   PROJECTILE_GRENADE: 'projectile.grenade',
-  PROJECTILE_ROCKET: 'projectile.rocket'
+  PROJECTILE_ROCKET: 'projectile.rocket',
+  EXPLOSION: 'effect.explosion'
 } as const;
 
 const ANIMATION_KEYS = {
   PLAYER_RUN: 'player.run'
 } as const;
 
-const WEAPON_POSE_KEYS: Record<WeaponKind, WeaponPoseKey> = {
+const WEAPON_POSE_KEYS: Record<Exclude<WeaponKind, 'fist'>, WeaponPoseKey> = {
   pistol: 'PISTOL',
   auto: 'AUTO',
   grenade: 'GRENADE',
@@ -75,20 +83,28 @@ const WEAPON_POSE_KEYS: Record<WeaponKind, WeaponPoseKey> = {
 export default class GameScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private playerVisual!: Phaser.GameObjects.Sprite;
+  private fistArm!: Phaser.GameObjects.Rectangle;
   private weapon!: Phaser.GameObjects.Sprite;
   private helmet!: Phaser.GameObjects.Sprite;
   private playerName?: Phaser.GameObjects.Text;
   private hpText?: Phaser.GameObjects.Text;
   private ghostText?: Phaser.GameObjects.Text;
+  private hudElement?: HTMLDivElement;
   private baseWarning?: Phaser.GameObjects.Rectangle;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys!: MovementKeys;
   private groundGroup!: Phaser.Physics.Arcade.StaticGroup;
   private projectiles!: Phaser.Physics.Arcade.Group;
+  private pickups!: Phaser.Physics.Arcade.StaticGroup;
+  private explosions!: Phaser.GameObjects.Group;
+  private readonly pickupSprites = new Map<string, Phaser.Physics.Arcade.Image>();
   private chargeBar!: Phaser.GameObjects.Graphics;
   private jumpsLeft = 2;
   private moveSpeed: number = GAME_CONFIG.PLAYER.MOVE_SPEED;
   private currentWeapon: WeaponKind = 'pistol';
+  private currentAmmo: number = WEAPONS.PISTOL.ammo;
+  private pickedDuringCurrentCrouch = false;
+  private nextPickupAt = 0;
   private grenadeChargeStartedAt = 0;
   private isChargingGrenade = false;
   private isAutoFiring = false;
@@ -105,6 +121,7 @@ export default class GameScene extends Phaser.Scene {
   private localGhost = false;
   private readonly windowMouseDownHandler = (event: MouseEvent): void => this.handleWindowMouseDown(event);
   private readonly windowMouseUpHandler = (event: MouseEvent): void => this.handleWindowMouseUp(event);
+  private fistArmTween?: Phaser.Tweens.Tween;
 
   constructor() {
     super('GameScene');
@@ -119,7 +136,7 @@ export default class GameScene extends Phaser.Scene {
   preload(): void {
     // Load tile assets
     this.load.image(SPRITE_KEYS.FLOOR, `assets/${ASSET_NAMES.TILE_FLOOR}`);
-    this.load.image(SPRITE_KEYS.WALL, `assets/${ASSET_NAMES.TILE_WALL}`);
+    this.load.image(SPRITE_KEYS.BOX, `assets/${ASSET_NAMES.TILE_WALL}`);
     
     // Load player sprites
     this.load.image(SPRITE_KEYS.PLAYER_IDLE, `assets/${ASSET_NAMES.PLAYER_IDLE}`);
@@ -143,6 +160,7 @@ export default class GameScene extends Phaser.Scene {
     this.load.image(SPRITE_KEYS.PROJECTILE_BULLET, `assets/${ASSET_NAMES.PROJ_BULLET}`);
     this.load.image(SPRITE_KEYS.PROJECTILE_GRENADE, `assets/${ASSET_NAMES.PROJ_GRENADE}`);
     this.load.image(SPRITE_KEYS.PROJECTILE_ROCKET, `assets/${ASSET_NAMES.PROJ_ROCKET}`);
+    this.load.image(SPRITE_KEYS.EXPLOSION, `assets/${ASSET_NAMES.EXPLOSION_01}`);
   }
 
   create(): void {
@@ -152,51 +170,18 @@ export default class GameScene extends Phaser.Scene {
 
     this.physics.world.setBounds(0, 0, MAP.WIDTH, MAP.HEIGHT);
     this.cameras.main.setBounds(0, 0, MAP.WIDTH, MAP.HEIGHT);
+    this.cameras.main.setZoom(GAME_CONFIG.CAMERA.ZOOM);
     this.addBaseZones();
 
-    // Create ground/platforms using tile_ground.png
     this.groundGroup = this.physics.add.staticGroup();
-    
-    // Create a series of ground tiles at the bottom
-    for (let i = 0; i < 40; i++) {
-      const ground = this.groundGroup.create(i * 64, 680, SPRITE_KEYS.FLOOR) as Phaser.Physics.Arcade.Image;
-      ground.setDisplaySize(64, 64);
-      ground.refreshBody();
-    }
-    
-    // Create some platforms
-    for (let i = 5; i < 15; i++) {
-      const platform = this.groundGroup.create(i * 64, 500, SPRITE_KEYS.FLOOR) as Phaser.Physics.Arcade.Image;
-      platform.setDisplaySize(64, 64);
-      platform.refreshBody();
-    }
-    
-    for (let i = 20; i < 30; i++) {
-      const platform = this.groundGroup.create(i * 64, 400, SPRITE_KEYS.FLOOR) as Phaser.Physics.Arcade.Image;
-      platform.setDisplaySize(64, 64);
-      platform.refreshBody();
-    }
-    
-    // Create walls on the sides
-    for (let i = 0; i < 12; i++) {
-      const leftWall = this.groundGroup.create(-32, i * 60, SPRITE_KEYS.WALL) as Phaser.Physics.Arcade.Image;
-      leftWall.setDisplaySize(64, 64);
-      leftWall.refreshBody();
-      
-      const rightWall = this.groundGroup.create(40 * 64 + 32, i * 60, SPRITE_KEYS.WALL) as Phaser.Physics.Arcade.Image;
-      rightWall.setDisplaySize(64, 64);
-      rightWall.refreshBody();
-    }
-    
-    // Create ceiling
-    for (let i = 0; i < 40; i++) {
-      const ceiling = this.groundGroup.create(i * 64, -32, SPRITE_KEYS.WALL) as Phaser.Physics.Arcade.Image;
-      ceiling.setDisplaySize(64, 64);
-      ceiling.refreshBody();
-    }
+    new MapBuilder(this.groundGroup, {
+      floor: SPRITE_KEYS.FLOOR,
+      box: SPRITE_KEYS.BOX
+    }).build(this.getMapSeed());
     
     // Create player sprite
-    this.player = this.physics.add.sprite(this.team === TEAM.RED ? MAP.RED_SPAWN_X : MAP.BLUE_SPAWN_X, MAP.GROUND_Y, SPRITE_KEYS.PLAYER_IDLE);
+    const spawnX = this.team === TEAM.RED ? MAP.RED_SPAWN_X : MAP.BLUE_SPAWN_X;
+    this.player = this.physics.add.sprite(spawnX, getPlayerSpawnY(this.getMapSeed(), spawnX), SPRITE_KEYS.PLAYER_IDLE);
     this.player.setVisible(false);
     this.player.setCollideWorldBounds(false); // We use custom bounds with walls
     this.player.setBounce(0);
@@ -217,17 +202,33 @@ export default class GameScene extends Phaser.Scene {
       fontSize: '16px',
       color: '#e8f3d0',
       fontFamily: 'Arial, sans-serif'
-    }).setScrollFactor(0).setDepth(10);
+    }).setScrollFactor(0).setDepth(1000);
     this.ghostText = this.add.text(16, 38, '', {
       fontSize: '16px',
       color: '#f1d27a',
       fontFamily: 'Arial, sans-serif'
-    }).setScrollFactor(0).setDepth(10);
+    }).setScrollFactor(0).setDepth(1000);
     this.baseWarning = this.add.rectangle(640, 360, 1280, 720, 0xff0000, 0)
       .setScrollFactor(0)
       .setDepth(9);
 
     this.weapon = this.add.sprite(this.player.x, this.player.y - 12, SPRITE_KEYS.WEAPON_PISTOL);
+    this.fistArm = this.add.rectangle(
+      this.player.x,
+      this.player.y,
+      GAME_CONFIG.WEAPONS.FIST_ARM.NORMAL_LENGTH,
+      GAME_CONFIG.WEAPONS.FIST_ARM.THICKNESS,
+      GAME_CONFIG.WEAPONS.FIST_ARM.FILL_COLOR,
+      1
+    )
+      .setOrigin(0, 0.5)
+      .setStrokeStyle(
+        GAME_CONFIG.WEAPONS.FIST_ARM.STROKE_WIDTH,
+        GAME_CONFIG.WEAPONS.FIST_ARM.STROKE_COLOR,
+        1
+      )
+      .setDepth(2)
+      .setVisible(false);
     this.setWeapon(this.currentWeapon);
 
     this.projectiles = this.physics.add.group({
@@ -236,6 +237,12 @@ export default class GameScene extends Phaser.Scene {
       runChildUpdate: false
     });
     this.physics.add.collider(this.projectiles, this.groundGroup, this.handleProjectileCollision, undefined, this);
+
+    this.pickups = this.physics.add.staticGroup();
+    this.explosions = this.add.group({
+      maxSize: 20,
+      classType: Phaser.GameObjects.Sprite
+    });
 
     this.chargeBar = this.add.graphics();
     
@@ -265,8 +272,16 @@ export default class GameScene extends Phaser.Scene {
     this.input.on('pointerup', this.handlePointerUp, this);
     this.installWindowMouseListeners();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.removeWindowMouseListeners, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.destroyHudOverlay, this);
+    this.createHudOverlay();
     this.setupNetwork();
-    this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
+    this.setupPickupStateSync();
+    this.cameras.main.startFollow(
+      this.playerVisual,
+      GAME_CONFIG.CAMERA.ROUND_PIXELS,
+      GAME_CONFIG.CAMERA.FOLLOW_LERP,
+      GAME_CONFIG.CAMERA.FOLLOW_LERP
+    );
     
     // Log asset loading
     console.log('Loaded asset config:', ASSET_NAMES.PLAYER_RUN);
@@ -281,6 +296,7 @@ export default class GameScene extends Phaser.Scene {
       this.stopAutoFire();
       this.handleGhostMovement();
       this.updatePlayerVisual();
+      this.applyGhostVisual(this.playerVisual, true);
       this.updateAttachedVisuals();
       this.updateNetworkInput();
       this.checkProjectileHits();
@@ -290,6 +306,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.handleWeaponHotkeys();
     this.handleCrouch();
+    this.tryPickupWeapon();
     this.handleJump();
     this.applyJumpGravity();
     // Handle horizontal movement
@@ -350,6 +367,48 @@ export default class GameScene extends Phaser.Scene {
     this.network.start();
   }
 
+  private setupPickupStateSync(): void {
+    const pickups = (this.room?.state as any)?.pickups;
+    if (!pickups) {
+      return;
+    }
+
+    pickups.forEach((pickup: any, id: string) => this.syncPickup(pickup, id));
+    pickups.onAdd = (pickup: any, id: string) => this.syncPickup(pickup, id);
+    pickups.onRemove = (_pickup: any, id: string) => this.removePickup(id);
+  }
+
+  private syncPickup(pickup: any, id: string): void {
+    const weapon = this.normalizeWeapon(pickup.weapon);
+    if (weapon === 'fist') {
+      return;
+    }
+
+    let sprite = this.pickupSprites.get(id);
+    if (!sprite) {
+      sprite = this.pickups.create(pickup.x, pickup.y, this.getWeaponTexture(weapon)) as Phaser.Physics.Arcade.Image;
+      sprite.setData('pickupId', id);
+      sprite.setData('weapon', weapon);
+      sprite.setDepth(1);
+      this.pickupSprites.set(id, sprite);
+    }
+
+    sprite.setTexture(this.getWeaponTexture(weapon));
+    sprite.setPosition(Number(pickup.x) || 0, Number(pickup.y) || 0);
+    sprite.setData('ammo', Number(pickup.ammo) || 0);
+    sprite.refreshBody();
+  }
+
+  private removePickup(id: string): void {
+    const sprite = this.pickupSprites.get(id);
+    if (!sprite) {
+      return;
+    }
+
+    sprite.destroy();
+    this.pickupSprites.delete(id);
+  }
+
   private updateNetworkInput(): void {
     if (!this.network || this.time.now < this.suppressInputUntil) {
       return;
@@ -359,6 +418,7 @@ export default class GameScene extends Phaser.Scene {
     const moveLeft = this.keys.A.isDown || this.cursors.left.isDown;
     const moveRight = this.keys.D.isDown || this.cursors.right.isDown;
     const move = moveLeft ? -1 : moveRight ? 1 : 0;
+    const aimAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y - 8, this.input.activePointer.worldX, this.input.activePointer.worldY);
 
     this.network.sendInput(this.time.now, {
       move,
@@ -369,7 +429,8 @@ export default class GameScene extends Phaser.Scene {
       x: this.player.x,
       y: this.player.y,
       vx: body.velocity.x,
-      vy: body.velocity.y
+      vy: body.velocity.y,
+      aimAngle
     });
   }
 
@@ -377,6 +438,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.network && id === this.network.getSessionId()) {
       this.localHp = player.hp;
       this.localGhost = Boolean(player.ghost);
+      this.syncLocalWeapon(player);
       this.applyLocalServerState(player);
       return;
     }
@@ -389,6 +451,8 @@ export default class GameScene extends Phaser.Scene {
 
     remote.team = player.team;
     remote.ghost = Boolean(player.ghost);
+    remote.weaponKind = this.normalizeWeapon(player.weapon);
+    remote.aimAngle = Number(player.aimAngle) || 0;
     remote.interpolator.push({
       tick: Number(player.lastInputTick) || 0,
       x: Number(player.x) || 0,
@@ -400,6 +464,7 @@ export default class GameScene extends Phaser.Scene {
     remote.name.setText(player.nick || 'Player');
     remote.hp?.setText(player.team === this.team ? `${Math.ceil(player.hp)} HP` : '');
     this.applyGhostVisual(remote.visual, Boolean(player.ghost));
+    this.updateRemoteWeaponTexture(remote);
   }
 
   private createRemotePlayer(player: any, id: string): RemotePlayerView {
@@ -410,6 +475,24 @@ export default class GameScene extends Phaser.Scene {
     body.setData('playerId', id);
 
     const visual = this.add.sprite(player.x, player.y, SPRITE_KEYS.PLAYER_IDLE).setDepth(1);
+    const weaponKind = this.normalizeWeapon(player.weapon);
+    const weapon = this.add.sprite(player.x, player.y, SPRITE_KEYS.WEAPON_PISTOL).setDepth(2);
+    const fistArm = this.add.rectangle(
+      player.x,
+      player.y,
+      GAME_CONFIG.WEAPONS.FIST_ARM.NORMAL_LENGTH,
+      GAME_CONFIG.WEAPONS.FIST_ARM.THICKNESS,
+      GAME_CONFIG.WEAPONS.FIST_ARM.FILL_COLOR,
+      1
+    )
+      .setOrigin(0, 0.5)
+      .setStrokeStyle(
+        GAME_CONFIG.WEAPONS.FIST_ARM.STROKE_WIDTH,
+        GAME_CONFIG.WEAPONS.FIST_ARM.STROKE_COLOR,
+        1
+      )
+      .setDepth(2)
+      .setVisible(false);
     const helmet = this.add.sprite(player.x, player.y - 22, player.team === TEAM.RED ? SPRITE_KEYS.HELMET_RED : SPRITE_KEYS.HELMET_BLUE).setDepth(3);
     const name = this.add.text(player.x, player.y - 48, player.nick || 'Player', {
       fontSize: '13px',
@@ -427,12 +510,17 @@ export default class GameScene extends Phaser.Scene {
     return {
       body,
       visual,
+      weapon,
+      fistArm,
       helmet,
       name,
       hp,
       interpolator: new Interpolator(),
       team: player.team,
-      ghost: Boolean(player.ghost)
+      ghost: Boolean(player.ghost),
+      lastVx: Number(player.vx) || 0,
+      weaponKind,
+      aimAngle: Number(player.aimAngle) || 0
     };
   }
 
@@ -442,13 +530,75 @@ export default class GameScene extends Phaser.Scene {
       if (sample) {
         remote.body.setPosition(sample.x, sample.y);
         remote.visual.setPosition(sample.x, sample.y);
+        remote.lastVx = sample.vx;
       }
+
+      this.updateRemoteRunAnimation(remote);
+      this.updateRemoteWeaponVisual(remote);
 
       const helmetPose = GAME_CONFIG.VISUALS.HELMET.STAND;
       remote.helmet.setPosition(remote.visual.x + helmetPose.x, remote.visual.y + helmetPose.y);
       remote.name.setPosition(remote.helmet.x, remote.helmet.y + GAME_CONFIG.VISUALS.HELMET.NAME_OFFSET_Y);
       remote.hp?.setPosition(remote.helmet.x, remote.helmet.y + GAME_CONFIG.VISUALS.HELMET.NAME_OFFSET_Y - 14);
     });
+  }
+
+  private updateRemoteRunAnimation(remote: RemotePlayerView): void {
+    if (remote.ghost) {
+      this.applyGhostVisual(remote.visual, true);
+      return;
+    }
+
+    if (Math.abs(remote.lastVx) > 10) {
+      remote.visual.setTexture(SPRITE_KEYS.PLAYER_RUN);
+      remote.visual.anims.play(ANIMATION_KEYS.PLAYER_RUN, true);
+      remote.visual.setFlipX(remote.lastVx < 0);
+    } else {
+      remote.visual.anims.stop();
+      remote.visual.setTexture(SPRITE_KEYS.PLAYER_IDLE);
+    }
+  }
+
+  private updateRemoteWeaponTexture(remote: RemotePlayerView): void {
+    if (remote.weaponKind === 'fist') {
+      remote.weapon.setVisible(false);
+      return;
+    }
+
+    remote.weapon.setTexture(this.getWeaponTexture(remote.weaponKind));
+    const poseConfig = GAME_CONFIG.WEAPONS.HAND_POSE[WEAPON_POSE_KEYS[remote.weaponKind]];
+    remote.weapon.setOrigin(poseConfig.ORIGIN_X, 0.5);
+    remote.weapon.setScale(poseConfig.DISPLAY_SCALE);
+  }
+
+  private updateRemoteWeaponVisual(remote: RemotePlayerView): void {
+    const hidden = remote.ghost;
+    const isFist = remote.weaponKind === 'fist';
+    const angle = remote.aimAngle;
+    const aimSign = Math.cos(angle) < 0 ? -1 : 1;
+    const isRunning = !remote.ghost && Math.abs(remote.lastVx) > 10;
+    const moveSign = remote.lastVx < -10 ? -1 : 1;
+    const pose = this.getWeaponPoseForKind(remote.weaponKind, false, isRunning, aimSign, moveSign);
+
+    remote.weapon.setVisible(!hidden && !isFist);
+    remote.fistArm.setVisible(!hidden && isFist);
+
+    if (!hidden && !isFist) {
+      remote.weapon.setPosition(remote.visual.x + pose.x, remote.visual.y + pose.y);
+      remote.weapon.setRotation(angle);
+      remote.weapon.setFlipY(aimSign < 0);
+    }
+
+    if (!hidden && isFist) {
+      const armConfig = GAME_CONFIG.WEAPONS.FIST_ARM;
+      remote.fistArm.setPosition(
+        remote.visual.x + pose.x + Math.cos(angle) * armConfig.OFFSET_X,
+        remote.visual.y + pose.y + armConfig.OFFSET_Y
+      );
+      remote.fistArm.setRotation(angle);
+      remote.fistArm.setFillStyle(armConfig.FILL_COLOR, 1);
+      remote.fistArm.setStrokeStyle(armConfig.STROKE_WIDTH, armConfig.STROKE_COLOR, 1);
+    }
   }
 
   private removeRemotePlayer(id: string): void {
@@ -459,6 +609,8 @@ export default class GameScene extends Phaser.Scene {
 
     remote.body.destroy();
     remote.visual.destroy();
+    remote.weapon.destroy();
+    remote.fistArm.destroy();
     remote.helmet.destroy();
     remote.name.destroy();
     remote.hp?.destroy();
@@ -476,20 +628,38 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private handleNetworkEvent(event: GameEventPayload): void {
+    if (event.type === 'explode') {
+      this.spawnExplosion(event.x || 0, event.y || 0);
+      this.applyExplosionKnockback(event.x || 0, event.y || 0, event.radius || 0, event.knockback || 0);
+      return;
+    }
+
     if (this.network && event.targetId === this.network.getSessionId()) {
       if (event.type === 'respawn') {
         this.snapLocalToServerState(event);
+      } else if (event.type === 'pickup' && event.weapon) {
+        this.setWeapon(event.weapon);
+        this.currentAmmo = typeof event.ammo === 'number' ? event.ammo : this.currentAmmo;
+      } else if (event.type === 'ammo') {
+        this.currentAmmo = typeof event.ammo === 'number' ? event.ammo : this.currentAmmo;
+        if (event.weapon) {
+          this.setWeapon(event.weapon);
+        }
       } else {
         this.flashDamage(this.playerVisual, this.localGhost);
       }
     }
 
-    const remote = this.remotePlayers.get(event.targetId);
+    const remote = event.targetId ? this.remotePlayers.get(event.targetId) : undefined;
     if (remote) {
       if (event.type === 'respawn') {
-        remote.body.setPosition(event.x ?? (remote.team === TEAM.RED ? MAP.RED_SPAWN_X : MAP.BLUE_SPAWN_X), event.y ?? MAP.GROUND_Y);
+        const fallbackX = remote.team === TEAM.RED ? MAP.RED_SPAWN_X : MAP.BLUE_SPAWN_X;
+        remote.body.setPosition(event.x ?? fallbackX, event.y ?? getPlayerSpawnY(this.getMapSeed(), fallbackX));
         remote.visual.setPosition(remote.body.x, remote.body.y);
-      } else {
+      } else if ((event.type === 'pickup' || event.type === 'ammo') && event.weapon) {
+        remote.weaponKind = event.weapon;
+        this.updateRemoteWeaponTexture(remote);
+      } else if (event.type === 'hit' || event.type === 'baseDamage' || event.type === 'death') {
         this.flashDamage(remote.visual, remote.ghost);
       }
     }
@@ -516,11 +686,53 @@ export default class GameScene extends Phaser.Scene {
     const baseWarningRange = baseWarningConfig.DAMAGE_WARNING_MAX_ALPHA - baseWarningConfig.DAMAGE_WARNING_MIN_ALPHA;
     const baseWarningPulse = (Math.sin(this.time.now / baseWarningConfig.DAMAGE_WARNING_BLINK_MS) + 1) / 2;
 
-    this.hpText?.setText(`HP ${Math.ceil(this.localHp)}`);
+    this.hpText?.setText(`HP ${Math.ceil(this.localHp)} | ${this.getWeaponLabel()} ${this.getAmmoLabel()}`);
     this.ghostText?.setText(this.localGhost ? `Призрак ${Math.ceil(this.getLocalGhostTimer())}s` : '');
+    this.updateHudOverlay();
     this.baseWarning?.setAlpha(inEnemyBase && !this.localGhost
       ? baseWarningConfig.DAMAGE_WARNING_MIN_ALPHA + baseWarningPulse * baseWarningRange
       : 0);
+  }
+
+  private createHudOverlay(): void {
+    const container = document.getElementById('game-container');
+    if (!container) {
+      return;
+    }
+
+    this.hudElement = document.createElement('div');
+    this.hudElement.style.position = 'absolute';
+    this.hudElement.style.left = '12px';
+    this.hudElement.style.top = '12px';
+    this.hudElement.style.zIndex = '20';
+    this.hudElement.style.pointerEvents = 'none';
+    this.hudElement.style.padding = '7px 10px';
+    this.hudElement.style.border = '1px solid rgba(232, 243, 208, 0.35)';
+    this.hudElement.style.background = 'rgba(8, 12, 9, 0.72)';
+    this.hudElement.style.color = '#e8f3d0';
+    this.hudElement.style.font = '700 14px Arial, sans-serif';
+    this.hudElement.style.lineHeight = '18px';
+    this.hudElement.style.textShadow = '0 1px 1px #000';
+    container.appendChild(this.hudElement);
+    this.updateHudOverlay();
+  }
+
+  private updateHudOverlay(): void {
+    if (!this.hudElement) {
+      return;
+    }
+
+    const ghostLine = this.localGhost ? `<div style="color:#f1d27a">Призрак ${Math.ceil(this.getLocalGhostTimer())}s</div>` : '';
+    this.hudElement.innerHTML = [
+      `<div>HP ${Math.ceil(this.localHp)}</div>`,
+      `<div>${this.getWeaponLabel()} ${this.getAmmoLabel()}</div>`,
+      ghostLine
+    ].join('');
+  }
+
+  private destroyHudOverlay(): void {
+    this.hudElement?.remove();
+    this.hudElement = undefined;
   }
 
   private getLocalGhostTimer(): number {
@@ -532,6 +744,124 @@ export default class GameScene extends Phaser.Scene {
   private isLocalInEnemyBase(): boolean {
     return (this.team === TEAM.BLUE && this.player.x < MAP.BASE_WIDTH) ||
       (this.team === TEAM.RED && this.player.x > MAP.WIDTH - MAP.BASE_WIDTH);
+  }
+
+  private getMapSeed(): number {
+    const state = this.room?.state as any;
+    return Number(state?.mapSeed) || MAP.DEFAULT_SEED;
+  }
+
+  private syncLocalWeapon(player: any): void {
+    const weapon = this.normalizeWeapon(player.weapon);
+    const ammo = Number(player.ammo);
+
+    if (weapon !== this.currentWeapon) {
+      this.setWeapon(weapon);
+    }
+
+    if (Number.isFinite(ammo)) {
+      this.currentAmmo = ammo;
+    }
+  }
+
+  private normalizeWeapon(weapon: unknown): WeaponKind {
+    return weapon === 'fist' || weapon === 'auto' || weapon === 'grenade' || weapon === 'rpg' || weapon === 'pistol'
+      ? weapon
+      : 'pistol';
+  }
+
+  private getWeaponTexture(weapon: Exclude<WeaponKind, 'fist'>): string {
+    const textureByWeapon: Record<Exclude<WeaponKind, 'fist'>, string> = {
+      pistol: SPRITE_KEYS.WEAPON_PISTOL,
+      auto: SPRITE_KEYS.WEAPON_AUTO,
+      grenade: SPRITE_KEYS.WEAPON_GRENADE,
+      rpg: SPRITE_KEYS.WEAPON_RPG
+    };
+
+    return textureByWeapon[weapon];
+  }
+
+  private getWeaponLabel(): string {
+    const labels: Record<WeaponKind, string> = {
+      fist: 'Fist',
+      pistol: 'Pistol',
+      auto: 'SMG',
+      grenade: 'Grenade',
+      rpg: 'RPG'
+    };
+
+    return labels[this.currentWeapon];
+  }
+
+  private getAmmoLabel(): string {
+    return this.currentWeapon === 'fist' || this.currentAmmo < 0 ? '∞' : String(this.currentAmmo);
+  }
+
+  private tryPickupWeapon(): void {
+    if (!this.network || !this.player.getData('crouching') || this.time.now < this.nextPickupAt || this.pickedDuringCurrentCrouch) {
+      return;
+    }
+
+    let nearest: Phaser.Physics.Arcade.Image | undefined;
+    let nearestDistance = Number.MAX_SAFE_INTEGER;
+
+    this.pickupSprites.forEach((pickup) => {
+      const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, pickup.x, pickup.y);
+      if (distance < nearestDistance) {
+        nearest = pickup;
+        nearestDistance = distance;
+      }
+    });
+
+    if (!nearest || nearestDistance > GAME_CONFIG.WEAPONS.PICKUP_RADIUS) {
+      return;
+    }
+
+    const pickupId = nearest.getData('pickupId') as string | undefined;
+    if (!pickupId) {
+      return;
+    }
+
+    this.network.sendPickup({ pickupId, crouch: Boolean(this.player.getData('crouching')) });
+    this.nextPickupAt = this.time.now + GAME.PICKUP_COOLDOWN;
+    this.pickedDuringCurrentCrouch = true;
+  }
+
+  private spawnExplosion(x: number, y: number): void {
+    const explosion = this.explosions.get(x, y, SPRITE_KEYS.EXPLOSION) as Phaser.GameObjects.Sprite | null;
+    if (!explosion) {
+      return;
+    }
+
+    explosion.setActive(true).setVisible(true).setPosition(x, y);
+    explosion.setScale(ASSET_SPECS.EFFECT.EXPLOSION.startScale);
+    explosion.setAlpha(0.9);
+    explosion.setDepth(5);
+
+    this.tweens.add({
+      targets: explosion,
+      scale: ASSET_SPECS.EFFECT.EXPLOSION.endScale,
+      alpha: 0,
+      duration: ASSET_SPECS.EFFECT.EXPLOSION.durationMs,
+      onComplete: () => {
+        explosion.setActive(false).setVisible(false);
+      }
+    });
+  }
+
+  private applyExplosionKnockback(x: number, y: number, radius: number, maxKnockback: number): void {
+    if (radius <= 0 || maxKnockback <= 0 || this.localGhost) {
+      return;
+    }
+
+    const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, x, y);
+    if (distance > radius) {
+      return;
+    }
+
+    const force = (1 - distance / radius) * maxKnockback;
+    const angle = Phaser.Math.Angle.Between(x, y, this.player.x, this.player.y);
+    (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(Math.cos(angle) * force, Math.sin(angle) * force);
   }
 
   private handleGhostMovement(): void {
@@ -551,12 +881,14 @@ export default class GameScene extends Phaser.Scene {
 
   private applyGhostVisual(sprite: Phaser.GameObjects.Sprite, ghost: boolean): void {
     if (ghost) {
+      sprite.anims.stop();
       sprite.setTexture(SPRITE_KEYS.PLAYER_GHOST);
       sprite.setAlpha(0.4);
       return;
     }
 
     if (sprite.texture.key === SPRITE_KEYS.PLAYER_GHOST || sprite.texture.key === SPRITE_KEYS.PLAYER_DAMAGE) {
+      sprite.anims.stop();
       sprite.setTexture(SPRITE_KEYS.PLAYER_IDLE);
     }
     sprite.setAlpha(1);
@@ -622,13 +954,13 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
 
-    const body = this.player.body as Phaser.Physics.Arcade.Body;
     this.player.setData('crouching', isCrouching);
 
     if (isCrouching) {
       this.moveSpeed = GAME_CONFIG.PLAYER.MOVE_SPEED / 2;
     } else {
       this.moveSpeed = GAME_CONFIG.PLAYER.MOVE_SPEED;
+      this.pickedDuringCurrentCrouch = false;
     }
   }
 
@@ -655,21 +987,29 @@ export default class GameScene extends Phaser.Scene {
     const facingLeft = aimSign < 0;
     const weaponPose = this.getWeaponPose(isCrouching, isRunning, aimSign, moveSign);
     const spriteFacingSign = this.playerVisual.flipX ? -1 : 1;
-    const helmetPose = this.getHelmetPose(isCrouching, isRunning, isRunning ? moveSign : spriteFacingSign);
+    const helmetPose = this.getHelmetPose(isCrouching && !this.localGhost, isRunning, isRunning ? moveSign : spriteFacingSign);
 
+    this.weapon.setVisible(this.currentWeapon !== 'fist' && !this.localGhost);
     this.weapon.setPosition(this.player.x + weaponPose.x, this.player.y + weaponPose.y);
     this.weapon.setRotation(angle);
     this.weapon.setFlipY(facingLeft);
     this.weapon.setScale(this.getCurrentWeaponPoseConfig().DISPLAY_SCALE);
     this.weapon.setDepth(2);
+    this.updateFistArmVisual(angle, weaponPose);
 
-    this.helmet.setPosition(this.player.x + helmetPose.x, this.player.y + helmetPose.y);
+    this.helmet.setPosition(this.playerVisual.x + helmetPose.x, this.playerVisual.y + helmetPose.y);
     this.helmet.setDepth(3);
-    this.playerName?.setPosition(this.player.x + helmetPose.x, this.player.y + helmetPose.y + GAME_CONFIG.VISUALS.HELMET.NAME_OFFSET_Y);
+    this.playerName?.setPosition(this.helmet.x, this.helmet.y + GAME_CONFIG.VISUALS.HELMET.NAME_OFFSET_Y);
   }
 
   private getWeaponPose(isCrouching: boolean, isRunning: boolean, aimSign: number, moveSign: number): PosePoint {
-    const config = this.getCurrentWeaponPoseConfig();
+    return this.getWeaponPoseForKind(this.currentWeapon, isCrouching, isRunning, aimSign, moveSign);
+  }
+
+  private getWeaponPoseForKind(weapon: WeaponKind, isCrouching: boolean, isRunning: boolean, aimSign: number, moveSign: number): PosePoint {
+    const config = weapon === 'fist'
+      ? GAME_CONFIG.WEAPONS.HAND_POSE.PISTOL
+      : GAME_CONFIG.WEAPONS.HAND_POSE[WEAPON_POSE_KEYS[weapon]];
 
     if (isCrouching) {
       return {
@@ -691,7 +1031,29 @@ export default class GameScene extends Phaser.Scene {
     };
   }
 
+  private updateFistArmVisual(angle: number, weaponPose: PosePoint): void {
+    const armConfig = GAME_CONFIG.WEAPONS.FIST_ARM;
+    const visible = this.currentWeapon === 'fist' && !this.localGhost;
+
+    this.fistArm.setVisible(visible);
+    if (!visible) {
+      return;
+    }
+
+    this.fistArm.setPosition(
+      this.player.x + weaponPose.x + Math.cos(angle) * armConfig.OFFSET_X,
+      this.player.y + weaponPose.y + armConfig.OFFSET_Y
+    );
+    this.fistArm.setRotation(angle);
+    this.fistArm.setFillStyle(armConfig.FILL_COLOR, 1);
+    this.fistArm.setStrokeStyle(armConfig.STROKE_WIDTH, armConfig.STROKE_COLOR, 1);
+  }
+
   private getCurrentWeaponPoseConfig(): typeof GAME_CONFIG.WEAPONS.HAND_POSE[WeaponPoseKey] {
+    if (this.currentWeapon === 'fist') {
+      return GAME_CONFIG.WEAPONS.HAND_POSE.PISTOL;
+    }
+
     return GAME_CONFIG.WEAPONS.HAND_POSE[WEAPON_POSE_KEYS[this.currentWeapon]];
   }
 
@@ -739,6 +1101,11 @@ export default class GameScene extends Phaser.Scene {
 
     if (this.currentWeapon === 'auto') {
       this.startAutoFire(pointer);
+      return;
+    }
+
+    if (this.currentWeapon === 'fist') {
+      this.swingFist();
       return;
     }
 
@@ -790,6 +1157,11 @@ export default class GameScene extends Phaser.Scene {
 
     if (this.currentWeapon === 'auto') {
       this.startAutoFire(target);
+      return;
+    }
+
+    if (this.currentWeapon === 'fist') {
+      this.swingFist();
       return;
     }
 
@@ -872,14 +1244,24 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private fireDirectProjectile(target: AimTarget): void {
+    const firingWeapon = this.currentWeapon;
     const projectile = this.obtainProjectile();
     if (!projectile) {
       return;
     }
 
-    const isRocket = this.currentWeapon === 'rpg';
+    if (!this.consumeLocalAmmo()) {
+      this.disableProjectile(projectile);
+      return;
+    }
+
+    if (this.network && firingWeapon !== 'fist' && (firingWeapon === 'pistol' || firingWeapon === 'auto' || firingWeapon === 'rpg')) {
+      this.network.sendShot({ weapon: firingWeapon });
+    }
+
+    const isRocket = firingWeapon === 'rpg';
     const texture = isRocket ? SPRITE_KEYS.PROJECTILE_ROCKET : SPRITE_KEYS.PROJECTILE_BULLET;
-    const projectileConfig = this.getDirectProjectileConfig();
+    const projectileConfig = this.getDirectProjectileConfig(firingWeapon);
     const startX = this.weapon.x;
     const startY = this.weapon.y;
     const angle = Phaser.Math.Angle.Between(startX, startY, target.worldX, target.worldY);
@@ -892,15 +1274,27 @@ export default class GameScene extends Phaser.Scene {
     this.resizeProjectileBody(projectile);
     projectile.setData('expiresAt', this.time.now + 2000);
     projectile.setData('damage', projectileConfig.damage);
+    projectile.setData('weapon', firingWeapon);
+    projectile.setData('explosive', firingWeapon === 'rpg');
     projectile.setData('hitSent', false);
     projectile.setData('previousX', startX);
     projectile.setData('previousY', startY);
   }
 
   private throwGrenade(target: AimTarget): void {
+    const firingWeapon = this.currentWeapon;
     const projectile = this.obtainProjectile();
     if (!projectile) {
       return;
+    }
+
+    if (!this.consumeLocalAmmo()) {
+      this.disableProjectile(projectile);
+      return;
+    }
+
+    if (this.network && firingWeapon === 'grenade') {
+      this.network.sendShot({ weapon: firingWeapon });
     }
 
     const charge = this.getGrenadeChargeRatio();
@@ -918,20 +1312,22 @@ export default class GameScene extends Phaser.Scene {
     this.resizeProjectileBody(projectile);
     projectile.setData('expiresAt', this.time.now + 2600);
     projectile.setData('damage', WEAPONS.GRENADE.damage);
+    projectile.setData('weapon', firingWeapon);
+    projectile.setData('explosive', true);
     projectile.setData('hitSent', false);
     projectile.setData('previousX', startX);
     projectile.setData('previousY', startY);
   }
 
-  private getDirectProjectileConfig(): { speed: number; damage: number } {
-    if (this.currentWeapon === 'rpg') {
+  private getDirectProjectileConfig(weapon: WeaponKind = this.currentWeapon): { speed: number; damage: number } {
+    if (weapon === 'rpg') {
       return {
         speed: GAME_CONFIG.WEAPONS.DIRECT_PROJECTILE.ROCKET_SPEED,
         damage: WEAPONS.RPG.damage
       };
     }
 
-    if (this.currentWeapon === 'auto') {
+    if (weapon === 'auto') {
       return {
         speed: GAME_CONFIG.WEAPONS.DIRECT_PROJECTILE.AUTO_BULLET_SPEED,
         damage: WEAPONS.AUTO.damage
@@ -942,6 +1338,72 @@ export default class GameScene extends Phaser.Scene {
       speed: GAME_CONFIG.WEAPONS.DIRECT_PROJECTILE.PISTOL_BULLET_SPEED,
       damage: WEAPONS.PISTOL.damage
     };
+  }
+
+  private swingFist(): void {
+    this.playFistArmAttack();
+
+    if (!this.network) {
+      return;
+    }
+
+    let closestId: string | undefined;
+    let closestDistance = Number.MAX_SAFE_INTEGER;
+
+    this.remotePlayers.forEach((remote, targetId) => {
+      if (remote.team === this.team || remote.ghost) {
+        return;
+      }
+
+      const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, remote.body.x, remote.body.y);
+      if (distance <= GAME_CONFIG.WEAPONS.MELEE_RANGE && distance < closestDistance) {
+        closestId = targetId;
+        closestDistance = distance;
+      }
+    });
+
+    if (closestId) {
+      this.network.sendHit(closestId, this.player.x, this.player.y, WEAPONS.FIST.damage);
+    }
+  }
+
+  private playFistArmAttack(): void {
+    const armConfig = GAME_CONFIG.WEAPONS.FIST_ARM;
+
+    this.fistArmTween?.stop();
+    this.fistArm.setDisplaySize(armConfig.NORMAL_LENGTH, armConfig.THICKNESS);
+    this.fistArmTween = this.tweens.add({
+      targets: this.fistArm,
+      displayWidth: armConfig.ATTACK_LENGTH,
+      duration: armConfig.ATTACK_MS,
+      yoyo: true,
+      hold: 20,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        this.fistArm.setDisplaySize(armConfig.NORMAL_LENGTH, armConfig.THICKNESS);
+        this.fistArmTween = undefined;
+      }
+    });
+  }
+
+  private consumeLocalAmmo(): boolean {
+    if (this.currentWeapon === 'fist') {
+      return true;
+    }
+
+    if (this.currentAmmo <= 0) {
+      this.setWeapon('fist');
+      this.currentAmmo = -1;
+      return false;
+    }
+
+    this.currentAmmo--;
+    if (this.currentAmmo <= 0) {
+      this.setWeapon('fist');
+      this.currentAmmo = -1;
+    }
+
+    return true;
   }
 
   private resizeProjectileBody(projectile: Phaser.Physics.Arcade.Sprite): void {
@@ -987,6 +1449,7 @@ export default class GameScene extends Phaser.Scene {
       }
 
       const line = new Phaser.Geom.Line(previousX, previousY, projectile.x, projectile.y);
+      const explosive = Boolean(projectile.getData('explosive'));
       let hit = false;
 
       this.remotePlayers.forEach((remote, targetId) => {
@@ -998,8 +1461,12 @@ export default class GameScene extends Phaser.Scene {
         Phaser.Geom.Rectangle.Inflate(bounds, 12, 12);
 
         if (Phaser.Geom.Intersects.LineToRectangle(line, bounds)) {
-          projectile.setData('hitSent', true);
-          this.network.sendHit(targetId, remote.body.x, remote.body.y, Number(projectile.getData('damage')) || WEAPONS.PISTOL.damage);
+          if (explosive) {
+            this.triggerProjectileExplosion(projectile, remote.body.x, remote.body.y);
+          } else {
+            projectile.setData('hitSent', true);
+            this.network.sendHit(targetId, remote.body.x, remote.body.y, Number(projectile.getData('damage')) || WEAPONS.PISTOL.damage);
+          }
           this.disableProjectile(projectile);
           hit = true;
         }
@@ -1019,7 +1486,9 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.disableProjectile(projectileObject as Phaser.Physics.Arcade.Sprite);
+    const projectile = projectileObject as Phaser.Physics.Arcade.Sprite;
+    this.triggerProjectileExplosion(projectile);
+    this.disableProjectile(projectile);
   }
 
   private handleProjectilePlayerOverlap(
@@ -1035,13 +1504,37 @@ export default class GameScene extends Phaser.Scene {
     const targetId = target.getData('playerId') as string | undefined;
     const remote = targetId ? this.remotePlayers.get(targetId) : undefined;
 
-    if (!targetId || !remote || remote.team === this.team || remote.ghost || projectile.getData('hitSent')) {
+    if (!targetId || !remote || remote.ghost || projectile.getData('hitSent')) {
+      return;
+    }
+
+    if (remote.team === this.team) {
+      return;
+    }
+
+    if (projectile.getData('explosive')) {
+      this.triggerProjectileExplosion(projectile, target.x, target.y);
+      this.disableProjectile(projectile);
       return;
     }
 
     projectile.setData('hitSent', true);
     this.network.sendHit(targetId, target.x, target.y, Number(projectile.getData('damage')) || WEAPONS.PISTOL.damage);
     this.disableProjectile(projectile);
+  }
+
+  private triggerProjectileExplosion(projectile: Phaser.Physics.Arcade.Sprite, x: number = projectile.x, y: number = projectile.y): void {
+    if (!projectile.getData('explosive') || projectile.getData('hitSent') || !this.network) {
+      return;
+    }
+
+    const weapon = projectile.getData('weapon') === 'rpg' ? 'rpg' : 'grenade';
+    projectile.setData('hitSent', true);
+    this.network.sendExplosion({
+      weapon,
+      x,
+      y
+    });
   }
 
   private disableProjectile(projectileObject: Phaser.GameObjects.GameObject): void {
@@ -1071,6 +1564,9 @@ export default class GameScene extends Phaser.Scene {
         projectile.y > camera.worldView.bottom + 300;
 
       if (expired || outsideWorld) {
+        if (projectile.getData('explosive')) {
+          this.triggerProjectileExplosion(projectile);
+        }
         this.disableProjectile(projectile);
       }
 
@@ -1104,6 +1600,10 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private handleWeaponHotkeys(): void {
+    if (this.network) {
+      return;
+    }
+
     if (Phaser.Input.Keyboard.JustDown(this.keys.ONE)) {
       this.setWeapon('pistol');
     } else if (Phaser.Input.Keyboard.JustDown(this.keys.TWO)) {
@@ -1121,14 +1621,20 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.currentWeapon = weapon;
-    const textureByWeapon: Record<WeaponKind, string> = {
-      pistol: SPRITE_KEYS.WEAPON_PISTOL,
-      auto: SPRITE_KEYS.WEAPON_AUTO,
-      grenade: SPRITE_KEYS.WEAPON_GRENADE,
-      rpg: SPRITE_KEYS.WEAPON_RPG
-    };
 
-    this.weapon.setTexture(textureByWeapon[weapon]);
+    if (weapon === 'fist') {
+      this.weapon.setVisible(false);
+      return;
+    }
+
+    this.fistArmTween?.stop();
+    this.fistArm.setVisible(false);
+    this.fistArm.setDisplaySize(
+      GAME_CONFIG.WEAPONS.FIST_ARM.NORMAL_LENGTH,
+      GAME_CONFIG.WEAPONS.FIST_ARM.THICKNESS
+    );
+    this.weapon.setVisible(true);
+    this.weapon.setTexture(this.getWeaponTexture(weapon));
     const poseConfig = GAME_CONFIG.WEAPONS.HAND_POSE[WEAPON_POSE_KEYS[weapon]];
     this.weapon.setOrigin(poseConfig.ORIGIN_X, 0.5);
     this.weapon.setScale(poseConfig.DISPLAY_SCALE);
