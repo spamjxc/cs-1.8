@@ -12,7 +12,21 @@ export default defineConfig({
   build: {
     outDir: '../dist/client',
     emptyOutDir: true,
-    target: 'es2019'
+    target: 'es2019',
+    chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.indexOf('node_modules/phaser') >= 0) {
+            return 'phaser';
+          }
+          if (id.indexOf('node_modules/colyseus') >= 0 || id.indexOf('node_modules/@colyseus') >= 0) {
+            return 'network';
+          }
+          return undefined;
+        }
+      }
+    }
   },
   server: {
     port: 5173,

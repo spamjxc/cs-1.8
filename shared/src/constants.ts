@@ -119,9 +119,9 @@ export const GAME_CONFIG = {
       STROKE_WIDTH: 1
     },
     EXPLOSION: {
-      GRENADE_RADIUS: 150,
+      GRENADE_RADIUS: 420,
       RPG_RADIUS: 210,
-      GRENADE_KNOCKBACK: 760,
+      GRENADE_KNOCKBACK: 1520,
       RPG_KNOCKBACK: 1020
     },
     HAND_POSE: {
@@ -234,7 +234,7 @@ export const MATCH_PHASES = {
 } as const;
 
 export const ADMIN_CONFIG = {
-  PASSWORD: 'zxczxc'
+  PASSWORD: 'radiation'
 } as const;
 
 export const NETWORK = {
@@ -277,8 +277,8 @@ export const WEAPONS = {
   FIST: { damage: GAME_CONFIG.WEAPONS.FIST_DAMAGE, ammo: Infinity, type: 'melee' },
   PISTOL: { damage: 20, ammo: 50, type: 'projectile' },
   AUTO: { damage: 20, ammo: 100, type: 'projectile' },
-  GRENADE: { damage: 50, ammo: 3, type: 'explosive' },
-  RPG: { damage: 40, ammo: 3, type: 'explosive' }
+  GRENADE: { damage: 80, ammo: 3, type: 'explosive' },
+  RPG: { damage: 40, ammo: 5, type: 'explosive' }
 } as const;
 
 /**

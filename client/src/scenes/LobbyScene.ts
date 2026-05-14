@@ -23,6 +23,7 @@ export default class LobbyScene extends Phaser.Scene {
   private blueButton?: Phaser.GameObjects.Text;
   private playButton?: Phaser.GameObjects.Text;
   private statusText?: Phaser.GameObjects.Text;
+  private gameSceneLoaded = false;
 
   constructor() {
     super('LobbyScene');
@@ -108,7 +109,7 @@ export default class LobbyScene extends Phaser.Scene {
         team: this.selectedTeam
       });
 
-      this.scene.start('GameScene', {
+      await this.startGameScene({
         room,
         nick,
         team: this.selectedTeam
@@ -119,12 +120,22 @@ export default class LobbyScene extends Phaser.Scene {
       this.playButton?.setInteractive({ useHandCursor: true }).setAlpha(1);
 
       this.time.delayedCall(450, () => {
-        this.scene.start('GameScene', {
+        void this.startGameScene({
           nick,
           team: this.selectedTeam
         } as GameSceneData);
       });
     }
+  }
+
+  private async startGameScene(data: GameSceneData): Promise<void> {
+    if (!this.gameSceneLoaded && !this.scene.get('GameScene')) {
+      const module = await import('@client/scenes/GameScene');
+      this.scene.add('GameScene', module.default, false);
+    }
+
+    this.gameSceneLoaded = true;
+    this.scene.start('GameScene', data);
   }
 
   private getWsEndpoint(): string {

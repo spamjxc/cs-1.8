@@ -1,6 +1,5 @@
 import * as Phaser from 'phaser';
 import { GAME_CONFIG } from '@shared/constants';
-import GameScene from '@client/scenes/GameScene';
 import LobbyScene from '@client/scenes/LobbyScene';
 
 
@@ -20,7 +19,7 @@ const config: Phaser.Types.Core.GameConfig = {
   dom: {
     createContainer: true
   },
-  scene: [LobbyScene, GameScene]
+  scene: [LobbyScene]
 };
 
 new Phaser.Game(config);
