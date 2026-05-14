@@ -25,6 +25,8 @@ export default class LobbyScene extends Phaser.Scene {
   private statusText?: Phaser.GameObjects.Text;
   private balanceText?: Phaser.GameObjects.Text;
   private autoBalance = false;
+  private redCount = 0;
+  private blueCount = 0;
   private lobbyClient?: Client;
   private lobbyPoll?: Phaser.Time.TimerEvent;
   private gameSceneLoaded = false;
@@ -34,25 +36,32 @@ export default class LobbyScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.add.rectangle(640, 360, 1280, 720, 0x1b211d);
-    this.add.rectangle(640, 360, 1280, 720, 0x2f3b2f, 0.35);
+    const width = this.scale.width || 1280;
+    const height = this.scale.height || 720;
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const topY = Math.max(82, centerY - 210);
+    const teamGap = Math.min(170, Math.max(132, width * 0.34));
 
-    this.add.text(640, 150, 'CS 1.8 "Радиация"', {
+    this.add.rectangle(centerX, centerY, width, height, 0x1b211d);
+    this.add.rectangle(centerX, centerY, width, height, 0x2f3b2f, 0.35);
+
+    this.add.text(centerX, topY, 'CS 1.8 "Радиация"', {
       fontSize: '36px',
       color: '#e8f3d0',
       fontFamily: 'Arial, sans-serif'
     }).setOrigin(0.5);
 
-    this.add.text(640, 205, 'Локальная сеть, две команды, один бой', {
+    this.add.text(centerX, topY + 55, 'Локальная сеть, две команды, один бой', {
       fontSize: '18px',
       color: '#9fb394',
       fontFamily: 'Arial, sans-serif'
     }).setOrigin(0.5);
 
-    this.nickInput = this.add.dom(640, 285).createFromHTML(LOBBY_HTML);
-    this.createTeamButtons();
+    this.nickInput = this.add.dom(centerX, topY + 135).createFromHTML(LOBBY_HTML);
+    this.createTeamButtons(centerX, topY + 210, teamGap);
 
-    this.playButton = this.add.text(640, 430, 'Играть', {
+    this.playButton = this.add.text(centerX, topY + 280, 'Играть', {
       fontSize: '24px',
       color: '#101510',
       backgroundColor: '#9bdc4a',
@@ -60,7 +69,7 @@ export default class LobbyScene extends Phaser.Scene {
       fontFamily: 'Arial, sans-serif'
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
-    this.statusText = this.add.text(640, 490, '', {
+    this.statusText = this.add.text(centerX, topY + 340, '', {
       fontSize: '16px',
       color: '#f1d27a',
       fontFamily: 'Arial, sans-serif'
@@ -72,14 +81,14 @@ export default class LobbyScene extends Phaser.Scene {
 
     void this.refreshLobbyBalance();
     this.lobbyPoll = this.time.addEvent({
-      delay: 1500,
+      delay: 750,
       loop: true,
       callback: () => void this.refreshLobbyBalance()
     });
   }
 
-  private createTeamButtons(): void {
-    this.redButton = this.add.text(560, 360, 'Красные', {
+  private createTeamButtons(centerX: number, y: number, gap: number): void {
+    this.redButton = this.add.text(centerX - gap / 2, y, '', {
       fontSize: '18px',
       color: '#ffffff',
       backgroundColor: '#8a2f2f',
@@ -87,7 +96,7 @@ export default class LobbyScene extends Phaser.Scene {
       fontFamily: 'Arial, sans-serif'
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
-    this.blueButton = this.add.text(720, 360, 'Синие', {
+    this.blueButton = this.add.text(centerX + gap / 2, y, '', {
       fontSize: '18px',
       color: '#ffffff',
       backgroundColor: '#2f568a',
@@ -99,11 +108,12 @@ export default class LobbyScene extends Phaser.Scene {
     this.blueButton.on('pointerdown', () => this.selectTeam(TEAM.BLUE));
     this.selectTeam(this.selectedTeam);
 
-    this.balanceText = this.add.text(640, 392, '', {
+    this.balanceText = this.add.text(centerX, y + 36, '', {
       fontSize: '15px',
       color: '#f1d27a',
       fontFamily: 'Arial, sans-serif'
     }).setOrigin(0.5);
+    this.updateTeamLabels();
   }
 
   private selectTeam(team: TeamId): void {
@@ -118,7 +128,7 @@ export default class LobbyScene extends Phaser.Scene {
 
   private setAutoBalance(autoBalance: boolean): void {
     this.autoBalance = autoBalance;
-    this.balanceText?.setText(autoBalance ? 'Включена балансировка: команда будет назначена автоматически' : '');
+    this.updateTeamLabels();
     [this.redButton, this.blueButton].forEach((button) => {
       if (!button) {
         return;
@@ -145,6 +155,14 @@ export default class LobbyScene extends Phaser.Scene {
     }
   }
 
+  private updateTeamLabels(): void {
+    this.redButton?.setText(`Красные ${this.redCount}`);
+    this.blueButton?.setText(`Синие ${this.blueCount}`);
+    this.balanceText?.setText(this.autoBalance
+      ? `Автобаланс включён · будет назначена команда · ${this.redCount}:${this.blueCount}`
+      : `В лобби: красные ${this.redCount}, синие ${this.blueCount}`);
+  }
+
   private async refreshLobbyBalance(): Promise<void> {
     try {
       if (!this.lobbyClient) {
@@ -154,8 +172,12 @@ export default class LobbyScene extends Phaser.Scene {
       const rooms = await this.lobbyClient.getAvailableRooms('game_room');
       const firstRoom = rooms && rooms.length > 0 ? rooms[0] as any : undefined;
       const metadata = firstRoom ? firstRoom.metadata : undefined;
+      this.redCount = this.toCount(metadata && metadata.redCount);
+      this.blueCount = this.toCount(metadata && metadata.blueCount);
       this.setAutoBalance(Boolean(metadata && metadata.autoBalance));
     } catch (error) {
+      this.redCount = 0;
+      this.blueCount = 0;
       this.setAutoBalance(false);
     }
   }
@@ -169,12 +191,12 @@ export default class LobbyScene extends Phaser.Scene {
 
     try {
       const client = new Client(await this.getWsEndpoint());
+      const predictedTeam = this.getPredictedJoinTeam();
       const room = await client.joinOrCreate('game_room', {
         nick,
-        team: this.selectedTeam
+        team: predictedTeam
       });
-      const assignedPlayer = (room.state as any)?.players?.get ? (room.state as any).players.get(room.sessionId) : undefined;
-      const assignedTeam = assignedPlayer ? (assignedPlayer.team === TEAM.BLUE ? TEAM.BLUE : TEAM.RED) : this.selectedTeam;
+      const assignedTeam = await this.waitForAssignedTeam(room, predictedTeam);
 
       await this.startGameScene({
         room,
@@ -193,6 +215,39 @@ export default class LobbyScene extends Phaser.Scene {
         } as GameSceneData);
       });
     }
+  }
+
+  private getPredictedJoinTeam(): TeamId {
+    if (!this.autoBalance) {
+      return this.selectedTeam;
+    }
+
+    const requestedRedCount = this.redCount + (this.selectedTeam === TEAM.RED ? 1 : 0);
+    const requestedBlueCount = this.blueCount + (this.selectedTeam === TEAM.BLUE ? 1 : 0);
+
+    if (Math.abs(requestedRedCount - requestedBlueCount) <= 1) {
+      return this.selectedTeam;
+    }
+
+    return this.redCount > this.blueCount ? TEAM.BLUE : TEAM.RED;
+  }
+
+  private async waitForAssignedTeam(room: Room, fallback: TeamId): Promise<TeamId> {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const assignedPlayer = (room.state as any)?.players?.get ? (room.state as any).players.get(room.sessionId) : undefined;
+      if (assignedPlayer) {
+        return assignedPlayer.team === TEAM.BLUE ? TEAM.BLUE : TEAM.RED;
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    }
+
+    return fallback;
+  }
+
+  private toCount(value: unknown): number {
+    const count = Number(value);
+    return Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
   }
 
   private async startGameScene(data: GameSceneData): Promise<void> {

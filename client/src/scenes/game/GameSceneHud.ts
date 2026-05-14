@@ -41,10 +41,11 @@ export abstract class GameSceneHud extends GameSceneNetwork {
     this.hudElement.style.borderRadius = '3px';
     this.hudElement.style.background = 'rgba(8, 12, 9, 0.82)';
     this.hudElement.style.color = '#e8f3d0';
-    this.hudElement.style.font = '700 15px Arial, sans-serif';
+    this.hudElement.style.font = '700 14px Arial, sans-serif';
     this.hudElement.style.lineHeight = '20px';
     this.hudElement.style.textShadow = '0 1px 1px #000';
     this.hudElement.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.7), inset 0 0 18px rgba(97, 128, 67, 0.16)';
+    this.hudElement.style.minWidth = '246px';
     container.appendChild(this.hudElement);
     this.updateHudOverlay();
 
@@ -74,12 +75,32 @@ export abstract class GameSceneHud extends GameSceneNetwork {
     this.updateTimerOverlay();
     const weaponIcon = this.currentWeapon === 'fist'
       ? ''
-      : `<img src="assets/${this.getCurrentWeaponAssetName()}" style="width:34px;height:22px;object-fit:contain;image-rendering:pixelated;" />`;
-    this.hudElement.innerHTML = [
-      `<div><span style="color:#ff8a8a">R ${this.redScore}</span> : <span style="color:#86b7ff">B ${this.blueScore}</span></div>`,
-      `<div><span style="color:#9fb394">HP</span> <span style="color:#e8f3d0">${Math.ceil(this.localHp)}</span></div>`,
-      `<div style="display:flex;align-items:center;gap:8px;">${weaponIcon}<span style="color:#9fb394">${this.getWeaponLabel()}</span> <span style="color:#e8f3d0">${this.getAmmoLabel()}</span></div>`
-    ].join('');
+      : `<img src="assets/${this.getCurrentWeaponAssetName()}" style="width:40px;height:24px;object-fit:contain;image-rendering:pixelated;display:block;" />`;
+    const hp = Phaser.Math.Clamp(Math.ceil(this.localHp), 0, GAME.MAX_HP);
+    const hpRatio = Phaser.Math.Clamp(hp / GAME.MAX_HP, 0, 1);
+    const hpColor = hpRatio > 0.55 ? '#9bdc4a' : hpRatio > 0.25 ? '#f1d27a' : '#ff8a8a';
+    const iconCell = weaponIcon || '<span style="width:40px;height:24px;display:block;color:#e8f3d0;text-align:center;line-height:24px;">-</span>';
+
+    this.hudElement.innerHTML = `
+      <div style="display:grid;grid-template-columns:74px 1fr;column-gap:10px;row-gap:6px;align-items:center;">
+        <div style="color:#9fb394;">Счёт</div>
+        <div><span style="color:#ff8a8a">Красные ${this.redScore}</span> : <span style="color:#86b7ff">${this.blueScore} Синие</span></div>
+        <div style="color:#9fb394;">HP</div>
+        <div style="display:grid;grid-template-columns:38px 1fr;gap:8px;align-items:center;">
+          <span style="color:#e8f3d0;text-align:right;">${hp}</span>
+          <span style="display:block;width:100%;height:8px;background:#1b1f1c;border:1px solid #e8f3d0;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.72);">
+            <span style="display:block;width:${Math.round(hpRatio * 100)}%;height:100%;background:${hpColor};"></span>
+          </span>
+        </div>
+        <div style="color:#9fb394;">Оружие</div>
+        <div style="display:grid;grid-template-columns:46px 1fr;gap:8px;align-items:center;min-height:28px;">
+          <span style="width:46px;height:28px;display:flex;align-items:center;justify-content:center;background:rgba(27,31,28,0.72);border:1px solid rgba(128,150,96,0.52);">${iconCell}</span>
+          <span style="color:#e8f3d0;white-space:nowrap;">${this.getWeaponLabel()}</span>
+        </div>
+        <div style="color:#9fb394;">Боезапас</div>
+        <div style="color:#e8f3d0;">${this.getAmmoLabel()}</div>
+      </div>
+    `;
   }
 
   protected updateTimerOverlay(): void {

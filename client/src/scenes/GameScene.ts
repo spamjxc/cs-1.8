@@ -68,8 +68,25 @@ export default class GameScene extends GameSceneProjectiles {
   private readonly chatMessages: string[] = [];
   private readonly windowMouseDownHandler = (event: MouseEvent): void => this.handleWindowMouseDown(event);
   private readonly windowMouseUpHandler = (event: MouseEvent): void => this.handleWindowMouseUp(event);
-  private readonly resizeHandler = (): void => this.configureCamera();
+  private readonly resizeHandler = (): void => {
+    this.configureCamera();
+    this.refreshMobileControlsMode();
+  };
   private fistArmTween?: Phaser.Tweens.Tween;
+  private hasReceivedLocalState = false;
+  private mobileControlsEnabled = false;
+  private mobileMovePointerId?: number;
+  private mobileFirePointerId?: number;
+  private mobileStickBase = new Phaser.Math.Vector2(0, 0);
+  private mobileStickKnob = new Phaser.Math.Vector2(0, 0);
+  private mobileMoveVector = new Phaser.Math.Vector2(0, 0);
+  private mobileStickGraphics?: Phaser.GameObjects.Graphics;
+  private mobileFireGraphics?: Phaser.GameObjects.Graphics;
+  private mobileJumpQueued = false;
+  private mobileUpHeld = false;
+  private mobileNextHeldJumpAt = 0;
+  private mobileAimTarget?: AimTarget;
+  private lastAimTarget?: AimTarget;
 
   constructor() {
     super('GameScene');
@@ -79,6 +96,7 @@ export default class GameScene extends GameSceneProjectiles {
     this.nick = data.nick || 'Player';
     this.team = data.team || TEAM.RED;
     this.room = data.room;
+    this.hasReceivedLocalState = false;
   }
 
   preload(): void {
@@ -128,8 +146,13 @@ export default class GameScene extends GameSceneProjectiles {
     }).build(this.currentMapSeed);
     
     // Create player sprite
-    const spawnX = this.team === TEAM.RED ? MAP.RED_SPAWN_X : MAP.BLUE_SPAWN_X;
-    this.player = this.physics.add.sprite(spawnX, getPlayerSpawnY(this.getMapSeed(), spawnX), SPRITE_KEYS.PLAYER_IDLE);
+    const initialPlayer = this.getInitialLocalPlayerState();
+    if (initialPlayer) {
+      this.team = initialPlayer.team === TEAM.BLUE ? TEAM.BLUE : TEAM.RED;
+    }
+    const spawnX = this.getInitialSpawnX(initialPlayer);
+    const spawnY = this.getInitialSpawnY(initialPlayer, spawnX);
+    this.player = this.physics.add.sprite(spawnX, spawnY, SPRITE_KEYS.PLAYER_IDLE);
     this.player.setVisible(false);
     this.player.setCollideWorldBounds(false); // We use custom bounds with walls
     this.player.setBounce(0);
@@ -156,7 +179,14 @@ export default class GameScene extends GameSceneProjectiles {
       color: '#f1d27a',
       fontFamily: 'Arial, sans-serif'
     }).setScrollFactor(0).setDepth(1000);
-    this.baseWarning = this.add.rectangle(640, 360, 1280, 720, 0xff0000, 0)
+    this.baseWarning = this.add.rectangle(
+      (this.scale.width || 1280) / 2,
+      (this.scale.height || 720) / 2,
+      this.scale.width || 1280,
+      this.scale.height || 720,
+      0xff0000,
+      0
+    )
       .setScrollFactor(0)
       .setDepth(9);
 
@@ -185,6 +215,7 @@ export default class GameScene extends GameSceneProjectiles {
       runChildUpdate: false
     });
     this.physics.add.collider(this.projectiles, this.groundGroup, this.handleProjectileCollision, undefined, this);
+    this.physics.add.overlap(this.projectiles, this.player, this.handleProjectileLocalOverlap, undefined, this);
 
     this.pickups = this.physics.add.staticGroup();
     this.explosions = this.add.group({
@@ -218,15 +249,23 @@ export default class GameScene extends GameSceneProjectiles {
     }) as MovementKeys;
     this.input.on('pointerdown', this.handlePointerDown, this);
     this.input.on('pointerup', this.handlePointerUp, this);
+    this.input.on('pointermove', this.handlePointerMove, this);
     this.installWindowMouseListeners();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.removeWindowMouseListeners, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.off('pointerdown', this.handlePointerDown, this);
+      this.input.off('pointerup', this.handlePointerUp, this);
+      this.input.off('pointermove', this.handlePointerMove, this);
+    });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.destroyHudOverlay, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.destroyMobileControls, this);
     this.scale.on('resize', this.resizeHandler);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off('resize', this.resizeHandler));
     this.createHudOverlay();
     this.createStatsOverlay();
     this.createAdminPanel();
     this.createChatOverlay();
+    this.createMobileControls();
     this.setupNetwork();
     this.setupPickupStateSync();
     this.cameras.main.startFollow(
@@ -245,6 +284,7 @@ export default class GameScene extends GameSceneProjectiles {
     this.syncMatchState();
     this.updateRemotePlayers();
     this.updateHud();
+    this.updateMobileControls();
 
     if (this.adminModalOpen) {
       const body = this.player.body as Phaser.Physics.Arcade.Body;
@@ -291,15 +331,7 @@ export default class GameScene extends GameSceneProjectiles {
     this.handleJump();
     this.applyJumpGravity();
     // Handle horizontal movement
-    const moveLeft = this.keys.A.isDown || this.cursors.left.isDown;
-    const moveRight = this.keys.D.isDown || this.cursors.right.isDown;
-    
-    let dir = 0;
-    if (moveLeft) {
-      dir = -1;
-    } else if (moveRight) {
-      dir = 1;
-    }
+    const dir = this.getHorizontalMoveDirection();
     
     // Apply velocity
     const body = this.player.body as Phaser.Physics.Arcade.Body;
@@ -329,5 +361,28 @@ export default class GameScene extends GameSceneProjectiles {
     this.updateNetworkInput();
     this.checkProjectileHits();
     this.recycleFarProjectiles();
+  }
+
+  private getInitialLocalPlayerState(): any | undefined {
+    const players = (this.room?.state as any)?.players;
+    return players && players.get ? players.get(this.room?.sessionId) : undefined;
+  }
+
+  private getInitialSpawnX(player: any | undefined): number {
+    const x = Number(player?.x);
+    if (Number.isFinite(x)) {
+      return x;
+    }
+
+    return this.team === TEAM.RED ? MAP.RED_SPAWN_X : MAP.BLUE_SPAWN_X;
+  }
+
+  private getInitialSpawnY(player: any | undefined, spawnX: number): number {
+    const y = Number(player?.y);
+    if (Number.isFinite(y)) {
+      return y;
+    }
+
+    return getPlayerSpawnY(this.getMapSeed(), spawnX);
   }
 }

@@ -209,6 +209,7 @@ export abstract class GameSceneProjectiles extends GameSceneWeaponInput {
       }
 
       if (projectile.getData('remote')) {
+        this.checkRemoteProjectileLocalHit(projectile);
         return true;
       }
 
@@ -302,6 +303,78 @@ export abstract class GameSceneProjectiles extends GameSceneWeaponInput {
 
     projectile.setData('hitSent', true);
     this.network.sendHit(targetId, target.x, target.y, Number(projectile.getData('damage')) || WEAPONS.PISTOL.damage);
+    this.disableProjectile(projectile);
+  }
+
+  protected checkRemoteProjectileLocalHit(projectile: Phaser.Physics.Arcade.Sprite): void {
+    if (this.localGhost || !projectile.active) {
+      return;
+    }
+
+    const ownerId = projectile.getData('ownerId') as string | undefined;
+    const owner = ownerId ? this.remotePlayers.get(ownerId) : undefined;
+    if (owner && owner.team === this.team) {
+      projectile.setData('previousX', projectile.x);
+      projectile.setData('previousY', projectile.y);
+      return;
+    }
+
+    const previousX = Number(projectile.getData('previousX'));
+    const previousY = Number(projectile.getData('previousY'));
+    if (!Number.isFinite(previousX) || !Number.isFinite(previousY)) {
+      projectile.setData('previousX', projectile.x);
+      projectile.setData('previousY', projectile.y);
+      return;
+    }
+
+    const line = new Phaser.Geom.Line(previousX, previousY, projectile.x, projectile.y);
+    const bounds = this.player.getBounds();
+    Phaser.Geom.Rectangle.Inflate(bounds, 12, 12);
+
+    if (!Phaser.Geom.Intersects.LineToRectangle(line, bounds)) {
+      projectile.setData('previousX', projectile.x);
+      projectile.setData('previousY', projectile.y);
+      return;
+    }
+
+    if (projectile.getData('explosive')) {
+      const weapon = projectile.getData('weapon') === 'rpg' ? 'rpg' : 'grenade';
+      const radius = weapon === 'rpg'
+        ? GAME_CONFIG.WEAPONS.EXPLOSION.RPG_RADIUS
+        : GAME_CONFIG.WEAPONS.EXPLOSION.GRENADE_RADIUS;
+      this.spawnExplosion(projectile.x, projectile.y, weapon, radius);
+    }
+
+    this.disableProjectile(projectile);
+  }
+
+  protected handleProjectileLocalOverlap(
+    projectileObject: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    playerObject: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+  ): void {
+    if (projectileObject instanceof Phaser.Tilemaps.Tile || playerObject instanceof Phaser.Tilemaps.Tile || this.localGhost) {
+      return;
+    }
+
+    const projectile = projectileObject as Phaser.Physics.Arcade.Sprite;
+    if (!projectile.getData('remote')) {
+      return;
+    }
+
+    const ownerId = projectile.getData('ownerId') as string | undefined;
+    const owner = ownerId ? this.remotePlayers.get(ownerId) : undefined;
+    if (owner && owner.team === this.team) {
+      return;
+    }
+
+    if (projectile.getData('explosive')) {
+      const weapon = projectile.getData('weapon') === 'rpg' ? 'rpg' : 'grenade';
+      const radius = weapon === 'rpg'
+        ? GAME_CONFIG.WEAPONS.EXPLOSION.RPG_RADIUS
+        : GAME_CONFIG.WEAPONS.EXPLOSION.GRENADE_RADIUS;
+      this.spawnExplosion(projectile.x, projectile.y, weapon, radius);
+    }
+
     this.disableProjectile(projectile);
   }
 
@@ -455,6 +528,7 @@ export abstract class GameSceneProjectiles extends GameSceneWeaponInput {
     projectile.setData('weapon', weapon);
     projectile.setData('explosive', isGrenade || isRocket);
     projectile.setData('remote', true);
+    projectile.setData('ownerId', ownerId);
     projectile.setData('hitSent', false);
     projectile.setData('previousX', startX);
     projectile.setData('previousY', startY);
