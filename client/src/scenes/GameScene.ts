@@ -91,6 +91,9 @@ export default class GameScene extends Phaser.Scene {
   private currentWeapon: WeaponKind = 'pistol';
   private grenadeChargeStartedAt = 0;
   private isChargingGrenade = false;
+  private isAutoFiring = false;
+  private nextAutoShotAt = 0;
+  private autoFireTarget?: AimTarget;
   private suppressInputUntil = 0;
   private nick = 'Player';
   private team: typeof TEAM.RED | typeof TEAM.BLUE = TEAM.RED;
@@ -275,6 +278,7 @@ export default class GameScene extends Phaser.Scene {
     this.updateHud();
 
     if (this.localGhost) {
+      this.stopAutoFire();
       this.handleGhostMovement();
       this.updatePlayerVisual();
       this.updateAttachedVisuals();
@@ -323,6 +327,7 @@ export default class GameScene extends Phaser.Scene {
     this.updatePlayerVisual();
     this.updateAttachedVisuals();
     this.updateChargeBar();
+    this.updateAutoFire();
     this.updateNetworkInput();
     this.checkProjectileHits();
     this.recycleFarProjectiles();
@@ -507,9 +512,15 @@ export default class GameScene extends Phaser.Scene {
 
   private updateHud(): void {
     const inEnemyBase = this.isLocalInEnemyBase();
+    const baseWarningConfig = GAME_CONFIG.BASES;
+    const baseWarningRange = baseWarningConfig.DAMAGE_WARNING_MAX_ALPHA - baseWarningConfig.DAMAGE_WARNING_MIN_ALPHA;
+    const baseWarningPulse = (Math.sin(this.time.now / baseWarningConfig.DAMAGE_WARNING_BLINK_MS) + 1) / 2;
+
     this.hpText?.setText(`HP ${Math.ceil(this.localHp)}`);
     this.ghostText?.setText(this.localGhost ? `Призрак ${Math.ceil(this.getLocalGhostTimer())}s` : '');
-    this.baseWarning?.setAlpha(inEnemyBase && !this.localGhost ? 0.16 + Math.sin(this.time.now / 80) * 0.08 : 0);
+    this.baseWarning?.setAlpha(inEnemyBase && !this.localGhost
+      ? baseWarningConfig.DAMAGE_WARNING_MIN_ALPHA + baseWarningPulse * baseWarningRange
+      : 0);
   }
 
   private getLocalGhostTimer(): number {
@@ -552,10 +563,10 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private flashDamage(sprite: Phaser.GameObjects.Sprite, ghost: boolean): void {
-    sprite.setTintFill(0xff2222);
+    sprite.setTint(0xff8a8a);
     this.tweens.add({
       targets: sprite,
-      alpha: ghost ? 0.25 : 0.55,
+      alpha: ghost ? 0.32 : 0.82,
       yoyo: true,
       duration: 80,
       repeat: 2,
@@ -720,8 +731,14 @@ export default class GameScene extends Phaser.Scene {
     }
 
     if (this.currentWeapon === 'grenade') {
+      this.stopAutoFire();
       this.isChargingGrenade = true;
       this.grenadeChargeStartedAt = this.time.now;
+      return;
+    }
+
+    if (this.currentWeapon === 'auto') {
+      this.startAutoFire(pointer);
       return;
     }
 
@@ -729,6 +746,11 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private handlePointerUp(pointer: Phaser.Input.Pointer): void {
+    if (this.isAutoFiring) {
+      this.stopAutoFire();
+      return;
+    }
+
     if (!this.isChargingGrenade || this.currentWeapon !== 'grenade') {
       return;
     }
@@ -760,8 +782,14 @@ export default class GameScene extends Phaser.Scene {
     const target = this.getWorldTargetFromWindowEvent(event);
 
     if (this.currentWeapon === 'grenade') {
+      this.stopAutoFire();
       this.isChargingGrenade = true;
       this.grenadeChargeStartedAt = this.time.now;
+      return;
+    }
+
+    if (this.currentWeapon === 'auto') {
+      this.startAutoFire(target);
       return;
     }
 
@@ -769,6 +797,11 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private handleWindowMouseUp(event: MouseEvent): void {
+    if (event.button === 0 && this.isAutoFiring) {
+      this.stopAutoFire();
+      return;
+    }
+
     if (event.button !== 0 || event.target === this.game.canvas || !this.isChargingGrenade || this.currentWeapon !== 'grenade') {
       return;
     }
@@ -788,6 +821,54 @@ export default class GameScene extends Phaser.Scene {
       worldX: worldPoint.x,
       worldY: worldPoint.y
     };
+  }
+
+  private startAutoFire(target: AimTarget): void {
+    this.isChargingGrenade = false;
+    this.chargeBar.clear();
+    this.isAutoFiring = true;
+    this.autoFireTarget = target;
+    this.fireDirectProjectile(target);
+    this.nextAutoShotAt = this.time.now + this.getAutoFireIntervalMs();
+  }
+
+  private stopAutoFire(): void {
+    this.isAutoFiring = false;
+    this.autoFireTarget = undefined;
+  }
+
+  private updateAutoFire(): void {
+    if (!this.isAutoFiring || this.currentWeapon !== 'auto' || this.localGhost) {
+      this.stopAutoFire();
+      return;
+    }
+
+    const pointer = this.input.activePointer;
+    if (!pointer.isDown && !this.autoFireTarget) {
+      this.stopAutoFire();
+      return;
+    }
+
+    if (this.time.now < this.nextAutoShotAt) {
+      return;
+    }
+
+    const target = pointer.isDown
+      ? { worldX: pointer.worldX, worldY: pointer.worldY }
+      : this.autoFireTarget;
+
+    if (!target) {
+      this.stopAutoFire();
+      return;
+    }
+
+    this.autoFireTarget = target;
+    this.fireDirectProjectile(target);
+    this.nextAutoShotAt = this.time.now + this.getAutoFireIntervalMs();
+  }
+
+  private getAutoFireIntervalMs(): number {
+    return 1000 / GAME_CONFIG.WEAPONS.DIRECT_PROJECTILE.AUTO_FIRE_RATE_PER_SEC;
   }
 
   private fireDirectProjectile(target: AimTarget): void {
@@ -852,13 +933,13 @@ export default class GameScene extends Phaser.Scene {
 
     if (this.currentWeapon === 'auto') {
       return {
-        speed: GAME_CONFIG.WEAPONS.DIRECT_PROJECTILE.AUTO_SPEED,
+        speed: GAME_CONFIG.WEAPONS.DIRECT_PROJECTILE.AUTO_BULLET_SPEED,
         damage: WEAPONS.AUTO.damage
       };
     }
 
     return {
-      speed: GAME_CONFIG.WEAPONS.DIRECT_PROJECTILE.PISTOL_SPEED,
+      speed: GAME_CONFIG.WEAPONS.DIRECT_PROJECTILE.PISTOL_BULLET_SPEED,
       damage: WEAPONS.PISTOL.damage
     };
   }
@@ -1035,6 +1116,10 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private setWeapon(weapon: WeaponKind): void {
+    if (weapon !== 'auto') {
+      this.stopAutoFire();
+    }
+
     this.currentWeapon = weapon;
     const textureByWeapon: Record<WeaponKind, string> = {
       pistol: SPRITE_KEYS.WEAPON_PISTOL,
