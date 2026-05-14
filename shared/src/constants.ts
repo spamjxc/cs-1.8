@@ -31,11 +31,7 @@ export const ASSET_NAMES = {
   // Tiles
   TILE_FLOOR: 'tile_ground.png',
   TILE_WALL: 'tile_box.png',
-  TILE_RAMP: 'tile_ramp.png',
-  
-  // Misc
-  BOX: 'box.png',
-  AMMO: 'ammo.webp'
+  TILE_RAMP: 'tile_box.png'
 } as const;
 
 /**
@@ -83,7 +79,8 @@ export const ASSET_SPECS = {
   TILE: {
     FLOOR: { width: 64, height: 64 },
     WALL: { width: 64, height: 64 },
-    RAMP: { width: 64, height: 64, collision: 'visual-only-for-mvp' }
+    RAMP: { width: 64, height: 64, collision: 'visual-only-for-mvp' },
+    BOX: { width: 64, height: 64 }
   }
 } as const;
 
@@ -105,6 +102,28 @@ export const GAME_CONFIG = {
     RUN_ANIMATION_FPS: 20
   },
   WEAPONS: {
+    FIST_DAMAGE: 10,
+    PICKUP_RADIUS: 72,
+    MELEE_RANGE: 44,
+    DEFAULT_PICKUPS: 8,
+    FIST_ARM: {
+      NORMAL_LENGTH: 12,
+      ATTACK_LENGTH: 30,
+      THICKNESS: 5,
+      OFFSET_X: -5,
+      OFFSET_Y: -5,
+      ATTACK_MS: 50,
+      RETURN_MS: 50,
+      FILL_COLOR: 0xffffff,
+      STROKE_COLOR: 0x050505,
+      STROKE_WIDTH: 1
+    },
+    EXPLOSION: {
+      GRENADE_RADIUS: 150,
+      RPG_RADIUS: 210,
+      GRENADE_KNOCKBACK: 760,
+      RPG_KNOCKBACK: 1020
+    },
     HAND_POSE: {
       PISTOL: {
         STAND: { x: 2, y: 0 },
@@ -160,8 +179,13 @@ export const GAME_CONFIG = {
   WORLD: {
     GRAVITY: 1000
   },
+  CAMERA: {
+    ZOOM: 1.1,
+    FOLLOW_LERP: 0.65,
+    ROUND_PIXELS: false
+  },
   BASES: {
-    WIDTH: 260,
+    WIDTH: 390,
     DAMAGE_WARNING_MIN_ALPHA: 0.12,
     DAMAGE_WARNING_MAX_ALPHA: 0.28,
     DAMAGE_WARNING_BLINK_MS: 45
@@ -210,24 +234,38 @@ export const NETWORK = {
   MAX_INPUTS_PER_SEC: 20,
   HIT_RATE_LIMIT_MS: 80,
   MAX_HIT_DISTANCE: 96,
-  DRIFT_CORRECTION_THRESHOLD: 3,
-  DRIFT_CORRECTION_ALPHA: 0.28
+  DRIFT_CORRECTION_THRESHOLD: 16,
+  DRIFT_CORRECTION_ALPHA: 0.12
 } as const;
 
 export const MAP = {
-  WIDTH: 2560,
+  WIDTH: 4096,
   HEIGHT: 720,
   GROUND_Y: 600,
   RED_SPAWN_X: 140,
-  BLUE_SPAWN_X: 2420,
-  BASE_WIDTH: GAME_CONFIG.BASES.WIDTH
+  BLUE_SPAWN_X: 3956,
+  BASE_WIDTH: GAME_CONFIG.BASES.WIDTH,
+  TILE_SIZE: 64,
+  DEFAULT_SEED: 180818,
+  MAX_STEP_ROWS: 1,
+  CORRIDOR_MIN_OPEN_ROWS: 4,
+  CORRIDOR_MAX_OPEN_ROWS: 5,
+  FLOOR_MIN_ROW: 7,
+  FLOOR_MAX_ROW: 9,
+  COVER_MIN_SPACING_COLUMNS: 4,
+  COVER_MAX_SPACING_COLUMNS: 8,
+  COVER_EDGE_SAFE_COLUMNS: 5,
+  COVER_MAX_WIDTH_COLUMNS: 2,
+  PLAYER_SPAWN_CLEARANCE: 30,
+  PICKUP_FLOOR_OFFSET: 20,
+  WALL_TINT: 0xb3b3b3
 } as const;
 
 /**
  * Weapon stats
  */
 export const WEAPONS = {
-  FIST: { damage: 10, ammo: Infinity, type: 'melee' },
+  FIST: { damage: GAME_CONFIG.WEAPONS.FIST_DAMAGE, ammo: Infinity, type: 'melee' },
   PISTOL: { damage: 20, ammo: 50, type: 'projectile' },
   AUTO: { damage: 20, ammo: 100, type: 'projectile' },
   GRENADE: { damage: 50, ammo: 3, type: 'explosive' },

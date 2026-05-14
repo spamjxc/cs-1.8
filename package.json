@@ -15,7 +15,8 @@
     "dev": "npm run build:shared && concurrently \"npm run dev:client\" \"npm run dev:server\"",
     "build": "npm run build:shared && vite build --config client/vite.config.ts && tsc -p server/tsconfig.json",
     "start": "node server/dist/server/src/index.js",
-    "typecheck": "tsc -p shared/tsconfig.json --noEmit && tsc -p client/tsconfig.json --noEmit && tsc -p server/tsconfig.json --noEmit"
+    "typecheck": "tsc -p shared/tsconfig.json --noEmit && tsc -p client/tsconfig.json --noEmit && tsc -p server/tsconfig.json --noEmit",
+    "test:map": "node tests/map-generator-invariants.js"
   },
   "dependencies": {
     "@colyseus/core": "0.14.20",
