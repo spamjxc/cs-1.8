@@ -71,6 +71,8 @@ export default class GameScene extends GameSceneProjectiles {
   private readonly resizeHandler = (): void => {
     this.configureCamera();
     this.refreshMobileControlsMode();
+    this.applyHudResponsiveLayout();
+    this.applyAdminResponsiveLayout();
   };
   private fistArmTween?: Phaser.Tweens.Tween;
   private hasReceivedLocalState = false;

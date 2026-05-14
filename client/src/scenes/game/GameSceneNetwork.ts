@@ -17,7 +17,9 @@ export abstract class GameSceneNetwork extends Phaser.Scene {
     const isSmallScreen = width <= GAME_CONFIG.MOBILE.SMALL_SCREEN_WIDTH ||
       height <= GAME_CONFIG.MOBILE.SMALL_SCREEN_HEIGHT;
 
-    camera.setZoom(isSmallScreen ? GAME_CONFIG.CAMERA.MOBILE_ZOOM : GAME_CONFIG.CAMERA.ZOOM);
+    camera.setZoom(isSmallScreen
+      ? GAME_CONFIG.CAMERA.MOBILE_ZOOM / GAME_CONFIG.CAMERA.MOBILE_ZOOM_DIVISOR
+      : GAME_CONFIG.CAMERA.ZOOM);
     camera.setDeadzone(200, 150);
     camera.setBounds(0, 0, MAP.WIDTH, MAP.HEIGHT);
     camera.setBackgroundColor('#1a1a1a');

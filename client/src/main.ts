@@ -32,5 +32,22 @@ function installTouchGuards(): void {
   document.addEventListener('contextmenu', (event) => event.preventDefault());
 }
 
+function installViewportInsetSync(): void {
+  const sync = (): void => {
+    const viewport = window.visualViewport;
+    const bottomInset = viewport
+      ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+      : 0;
+
+    document.documentElement.style.setProperty('--radiation-browser-bottom-inset', `${Math.round(bottomInset)}px`);
+  };
+
+  sync();
+  window.addEventListener('resize', sync);
+  window.visualViewport?.addEventListener('resize', sync);
+  window.visualViewport?.addEventListener('scroll', sync);
+}
+
 installTouchGuards();
+installViewportInsetSync();
 new Phaser.Game(config);

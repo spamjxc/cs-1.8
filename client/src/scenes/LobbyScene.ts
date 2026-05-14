@@ -40,40 +40,43 @@ export default class LobbyScene extends Phaser.Scene {
     const height = this.scale.height || 720;
     const centerX = width / 2;
     const centerY = height / 2;
-    const topY = Math.max(82, centerY - 210);
-    const teamGap = Math.min(170, Math.max(132, width * 0.34));
+    const panelWidth = Math.max(280, Math.min(500, width - 28));
+    const panelHeight = Math.max(360, Math.min(470, height - 32));
+    const panelTop = centerY - panelHeight / 2;
+    const topY = panelTop + 58;
+    const teamGap = Math.min(180, Math.max(132, panelWidth * 0.48));
 
-    this.add.rectangle(centerX, centerY, width, height, 0x1b211d);
-    this.add.rectangle(centerX, centerY, width, height, 0x2f3b2f, 0.35);
+    this.createLobbyBackdrop(width, height);
+    this.createLobbyPanel(centerX, centerY, panelWidth, panelHeight);
 
     this.add.text(centerX, topY, 'CS 1.8 "Радиация"', {
-      fontSize: '36px',
+      fontSize: width < 520 ? '28px' : '36px',
       color: '#e8f3d0',
       fontFamily: 'Arial, sans-serif'
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setDepth(4);
 
-    this.add.text(centerX, topY + 55, 'Локальная сеть, две команды, один бой', {
-      fontSize: '18px',
+    this.add.text(centerX, topY + 44, 'Локальная сеть, две команды, один бой', {
+      fontSize: width < 520 ? '14px' : '18px',
       color: '#9fb394',
       fontFamily: 'Arial, sans-serif'
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setDepth(4);
 
-    this.nickInput = this.add.dom(centerX, topY + 135).createFromHTML(LOBBY_HTML);
-    this.createTeamButtons(centerX, topY + 210, teamGap);
+    this.nickInput = this.add.dom(centerX, topY + 118).createFromHTML(LOBBY_HTML).setDepth(4);
+    this.createTeamButtons(centerX, topY + 188, teamGap);
 
-    this.playButton = this.add.text(centerX, topY + 280, 'Играть', {
+    this.playButton = this.add.text(centerX, topY + 270, 'Играть', {
       fontSize: '24px',
       color: '#101510',
       backgroundColor: '#9bdc4a',
       padding: { x: 28, y: 12 },
       fontFamily: 'Arial, sans-serif'
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    }).setOrigin(0.5).setDepth(4).setInteractive({ useHandCursor: true });
 
-    this.statusText = this.add.text(centerX, topY + 340, '', {
+    this.statusText = this.add.text(centerX, topY + 330, '', {
       fontSize: '16px',
       color: '#f1d27a',
       fontFamily: 'Arial, sans-serif'
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setDepth(4);
 
     this.playButton.on('pointerdown', () => {
       this.joinGame();
@@ -87,6 +90,89 @@ export default class LobbyScene extends Phaser.Scene {
     });
   }
 
+  private createLobbyBackdrop(width: number, height: number): void {
+    const graphics = this.add.graphics().setDepth(0);
+    graphics.fillStyle(0x10150f, 1);
+    graphics.fillRect(0, 0, width, height);
+    graphics.fillStyle(0x213023, 0.35);
+    graphics.fillRect(0, 0, width, height);
+    graphics.fillStyle(0x1b211d, 0.78);
+    graphics.fillRect(0, 0, width, height);
+
+    graphics.fillStyle(0x8a2f2f, 0.16);
+    graphics.fillRect(0, 0, Math.max(76, width * 0.18), height);
+    graphics.fillStyle(0x2f568a, 0.16);
+    graphics.fillRect(width - Math.max(76, width * 0.18), 0, Math.max(76, width * 0.18), height);
+
+    graphics.lineStyle(1, 0xe8f3d0, 0.035);
+    for (let y = 0; y < height; y += 8) {
+      graphics.lineBetween(0, y, width, y);
+    }
+
+    graphics.fillStyle(0x070907, 0.72);
+    const tile = 32;
+    for (let x = 0; x < width; x += tile) {
+      const h = 20 + ((x / tile) % 5) * 7;
+      graphics.fillRect(x, height - h, tile - 2, h);
+    }
+
+    for (let i = 0; i < 48; i++) {
+      const x = (i * 97) % Math.max(1, width);
+      const y = (i * 53) % Math.max(1, height);
+      graphics.fillStyle(i % 3 === 0 ? 0x9bdc4a : 0xe8f3d0, i % 3 === 0 ? 0.12 : 0.07);
+      graphics.fillRect(x, y, 2 + (i % 3), 2);
+    }
+  }
+
+  private createLobbyPanel(x: number, y: number, width: number, height: number): void {
+    const graphics = this.add.graphics().setDepth(1);
+    const left = x - width / 2;
+    const top = y - height / 2;
+
+    graphics.fillStyle(0x050705, 0.52);
+    graphics.fillRect(left + 8, top + 10, width, height);
+    graphics.fillStyle(0x101710, 0.94);
+    graphics.fillRect(left, top, width, height);
+    graphics.lineStyle(2, 0x6f805f, 0.92);
+    graphics.strokeRect(left, top, width, height);
+    graphics.lineStyle(1, 0xe8f3d0, 0.22);
+    graphics.strokeRect(left + 6, top + 6, width - 12, height - 12);
+    graphics.fillStyle(0x263025, 0.88);
+    graphics.fillRect(left, top, width, 36);
+    graphics.fillStyle(0x9bdc4a, 0.18);
+    graphics.fillRect(left + 12, top + 36, width - 24, 2);
+    graphics.fillStyle(0x6f805f, 0.36);
+    graphics.fillRect(left + 14, top + height - 30, width - 28, 2);
+
+    this.drawRadiationMark(x, top + 20);
+
+    const pulse = this.add.rectangle(x, y, width - 24, height - 24, 0x9bdc4a, 0.025)
+      .setDepth(2)
+      .setStrokeStyle(1, 0x9bdc4a, 0.08);
+    this.tweens.add({
+      targets: pulse,
+      alpha: 0.11,
+      duration: 1500,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+  }
+
+  private drawRadiationMark(x: number, y: number): void {
+    const graphics = this.add.graphics().setDepth(3);
+    graphics.fillStyle(0xf1d27a, 0.82);
+    graphics.fillCircle(x, y, 4);
+    graphics.fillStyle(0xf1d27a, 0.32);
+    for (let i = 0; i < 3; i++) {
+      const angle = -Math.PI / 2 + i * (Math.PI * 2 / 3);
+      const p1 = new Phaser.Math.Vector2(x + Math.cos(angle) * 9, y + Math.sin(angle) * 9);
+      const p2 = new Phaser.Math.Vector2(x + Math.cos(angle + 0.38) * 22, y + Math.sin(angle + 0.38) * 22);
+      const p3 = new Phaser.Math.Vector2(x + Math.cos(angle - 0.38) * 22, y + Math.sin(angle - 0.38) * 22);
+      graphics.fillTriangle(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+    }
+  }
+
   private createTeamButtons(centerX: number, y: number, gap: number): void {
     this.redButton = this.add.text(centerX - gap / 2, y, '', {
       fontSize: '18px',
@@ -94,7 +180,7 @@ export default class LobbyScene extends Phaser.Scene {
       backgroundColor: '#8a2f2f',
       padding: { x: 18, y: 10 },
       fontFamily: 'Arial, sans-serif'
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    }).setOrigin(0.5).setDepth(4).setInteractive({ useHandCursor: true });
 
     this.blueButton = this.add.text(centerX + gap / 2, y, '', {
       fontSize: '18px',
@@ -102,7 +188,7 @@ export default class LobbyScene extends Phaser.Scene {
       backgroundColor: '#2f568a',
       padding: { x: 18, y: 10 },
       fontFamily: 'Arial, sans-serif'
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    }).setOrigin(0.5).setDepth(4).setInteractive({ useHandCursor: true });
 
     this.redButton.on('pointerdown', () => this.selectTeam(TEAM.RED));
     this.blueButton.on('pointerdown', () => this.selectTeam(TEAM.BLUE));
@@ -112,7 +198,7 @@ export default class LobbyScene extends Phaser.Scene {
       fontSize: '15px',
       color: '#f1d27a',
       fontFamily: 'Arial, sans-serif'
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setDepth(4);
     this.updateTeamLabels();
   }
 
@@ -158,9 +244,7 @@ export default class LobbyScene extends Phaser.Scene {
   private updateTeamLabels(): void {
     this.redButton?.setText(`Красные ${this.redCount}`);
     this.blueButton?.setText(`Синие ${this.blueCount}`);
-    this.balanceText?.setText(this.autoBalance
-      ? `Автобаланс включён · будет назначена команда · ${this.redCount}:${this.blueCount}`
-      : `В лобби: красные ${this.redCount}, синие ${this.blueCount}`);
+    this.balanceText?.setText(this.autoBalance ? 'Автобаланс: вкл' : '');
   }
 
   private async refreshLobbyBalance(): Promise<void> {

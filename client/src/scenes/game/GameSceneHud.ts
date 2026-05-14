@@ -19,6 +19,7 @@ export abstract class GameSceneHud extends GameSceneNetwork {
     this.hpText?.setText('');
     this.ghostText?.setText('');
     this.updateHudOverlay();
+    this.applyHudResponsiveLayout();
     this.baseWarning?.setAlpha(inEnemyBase && !this.localGhost
       ? baseWarningConfig.DAMAGE_WARNING_MIN_ALPHA + baseWarningPulse * baseWarningRange
       : 0);
@@ -45,7 +46,8 @@ export abstract class GameSceneHud extends GameSceneNetwork {
     this.hudElement.style.lineHeight = '20px';
     this.hudElement.style.textShadow = '0 1px 1px #000';
     this.hudElement.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.7), inset 0 0 18px rgba(97, 128, 67, 0.16)';
-    this.hudElement.style.minWidth = '246px';
+    this.hudElement.style.minWidth = '218px';
+    this.hudElement.style.transformOrigin = 'top left';
     container.appendChild(this.hudElement);
     this.updateHudOverlay();
 
@@ -54,6 +56,7 @@ export abstract class GameSceneHud extends GameSceneNetwork {
     this.timerElement.style.left = '50%';
     this.timerElement.style.bottom = '14px';
     this.timerElement.style.transform = 'translateX(-50%)';
+    this.timerElement.style.transformOrigin = 'bottom center';
     this.timerElement.style.zIndex = '22';
     this.timerElement.style.pointerEvents = 'none';
     this.timerElement.style.display = 'flex';
@@ -65,6 +68,7 @@ export abstract class GameSceneHud extends GameSceneNetwork {
     this.timerElement.style.textShadow = '0 2px 2px #000';
     container.appendChild(this.timerElement);
     this.updateTimerOverlay();
+    this.applyHudResponsiveLayout();
   }
 
   protected updateHudOverlay(): void {
@@ -73,32 +77,25 @@ export abstract class GameSceneHud extends GameSceneNetwork {
     }
 
     this.updateTimerOverlay();
-    const weaponIcon = this.currentWeapon === 'fist'
-      ? ''
-      : `<img src="assets/${this.getCurrentWeaponAssetName()}" style="width:40px;height:24px;object-fit:contain;image-rendering:pixelated;display:block;" />`;
     const hp = Phaser.Math.Clamp(Math.ceil(this.localHp), 0, GAME.MAX_HP);
     const hpRatio = Phaser.Math.Clamp(hp / GAME.MAX_HP, 0, 1);
     const hpColor = hpRatio > 0.55 ? '#9bdc4a' : hpRatio > 0.25 ? '#f1d27a' : '#ff8a8a';
-    const iconCell = weaponIcon || '<span style="width:40px;height:24px;display:block;color:#e8f3d0;text-align:center;line-height:24px;">-</span>';
 
     this.hudElement.innerHTML = `
       <div style="display:grid;grid-template-columns:74px 1fr;column-gap:10px;row-gap:6px;align-items:center;">
         <div style="color:#9fb394;">Счёт</div>
         <div><span style="color:#ff8a8a">Красные ${this.redScore}</span> : <span style="color:#86b7ff">${this.blueScore} Синие</span></div>
         <div style="color:#9fb394;">HP</div>
-        <div style="display:grid;grid-template-columns:38px 1fr;gap:8px;align-items:center;">
-          <span style="color:#e8f3d0;text-align:right;">${hp}</span>
+        <div style="display:grid;grid-template-columns:42px minmax(86px,1fr);gap:8px;align-items:center;">
+          <span style="color:#e8f3d0;text-align:right;padding-right:3px;">${hp}</span>
           <span style="display:block;width:100%;height:8px;background:#1b1f1c;border:1px solid #e8f3d0;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.72);">
             <span style="display:block;width:${Math.round(hpRatio * 100)}%;height:100%;background:${hpColor};"></span>
           </span>
         </div>
         <div style="color:#9fb394;">Оружие</div>
-        <div style="display:grid;grid-template-columns:46px 1fr;gap:8px;align-items:center;min-height:28px;">
-          <span style="width:46px;height:28px;display:flex;align-items:center;justify-content:center;background:rgba(27,31,28,0.72);border:1px solid rgba(128,150,96,0.52);">${iconCell}</span>
-          <span style="color:#e8f3d0;white-space:nowrap;">${this.getWeaponLabel()}</span>
-        </div>
+        <div style="color:#e8f3d0;white-space:nowrap;text-align:left;">${this.getWeaponLabel()}</div>
         <div style="color:#9fb394;">Боезапас</div>
-        <div style="color:#e8f3d0;">${this.getAmmoLabel()}</div>
+        <div style="color:#e8f3d0;text-align:left;">${this.getAmmoLabel()}</div>
       </div>
     `;
   }
@@ -117,6 +114,52 @@ export abstract class GameSceneHud extends GameSceneNetwork {
       <span style="border:2px solid rgba(128,150,96,0.72);background:rgba(8,12,9,0.82);padding:6px 12px;">${phaseLabel} ${this.formatTime(this.phaseTimer)}</span>
       ${ghostLine}
     `;
+  }
+
+  protected applyHudResponsiveLayout(): void {
+    const scale = this.getHudUiScale();
+    const mobile = this.isMobileViewport();
+    const edge = mobile ? GAME_CONFIG.MOBILE.PANEL_EDGE_PX : 12;
+    const bottomGap = mobile ? GAME_CONFIG.MOBILE.PANEL_BOTTOM_GAP_PX : 14;
+
+    if (this.hudElement) {
+      this.hudElement.style.left = `${edge}px`;
+      this.hudElement.style.top = `${edge}px`;
+      this.hudElement.style.transform = `scale(${scale})`;
+    }
+
+    if (this.timerElement) {
+      this.timerElement.style.bottom = this.getBottomInsetCss(bottomGap);
+      this.timerElement.style.transform = `translateX(-50%) scale(${scale})`;
+    }
+
+    if (this.statsElement) {
+      this.statsElement.style.transform = `translate(-50%, -50%) scale(${scale})`;
+    }
+
+    if (this.chatElement) {
+      this.chatElement.style.left = `${edge}px`;
+      this.chatElement.style.bottom = this.getBottomInsetCss(bottomGap);
+      this.chatElement.style.transform = `scale(${scale})`;
+    }
+  }
+
+  protected isMobileViewport(): boolean {
+    const width = this.scale.width || window.innerWidth || 1280;
+    const height = this.scale.height || window.innerHeight || 720;
+
+    return width <= GAME_CONFIG.MOBILE.SMALL_SCREEN_WIDTH ||
+      height <= GAME_CONFIG.MOBILE.SMALL_SCREEN_HEIGHT;
+  }
+
+  protected getHudUiScale(): number {
+    return this.isMobileViewport()
+      ? 1 / GAME_CONFIG.MOBILE.UI_SCALE_DIVISOR
+      : 1;
+  }
+
+  protected getBottomInsetCss(basePixels: number): string {
+    return `calc(${basePixels}px + env(safe-area-inset-bottom, 0px) + var(--radiation-browser-bottom-inset, 0px))`;
   }
 
   protected destroyHudOverlay(): void {
@@ -145,6 +188,7 @@ export abstract class GameSceneHud extends GameSceneNetwork {
     this.statsElement.style.left = '50%';
     this.statsElement.style.top = '50%';
     this.statsElement.style.transform = 'translate(-50%, -50%)';
+    this.statsElement.style.transformOrigin = 'center center';
     this.statsElement.style.width = 'min(720px, calc(100vw - 32px))';
     this.statsElement.style.maxHeight = 'min(620px, calc(100vh - 32px))';
     this.statsElement.style.overflow = 'auto';
@@ -156,6 +200,7 @@ export abstract class GameSceneHud extends GameSceneNetwork {
     this.statsElement.style.color = '#e8f3d0';
     this.statsElement.style.font = '14px Arial, sans-serif';
     container.appendChild(this.statsElement);
+    this.applyHudResponsiveLayout();
   }
 
   protected updateStatsOverlay(): void {
@@ -176,19 +221,21 @@ export abstract class GameSceneHud extends GameSceneNetwork {
     };
     const winnerLabel = stats.winner === 'draw' ? 'Ничья' : stats.winner === TEAM.RED ? 'Красные' : 'Синие';
     const localId = this.network?.getSessionId();
-    const rows = stats.players.map((player) => {
+    const rows = stats.players.map((player, index) => {
       const highlight = player.id === localId ? 'background:rgba(255,215,0,0.25);font-weight:700;' : '';
       const teamColor = player.team === TEAM.RED ? '#ff8a8a' : '#86b7ff';
-      return `<tr style="${highlight}"><td>${this.escapeHtml(player.nick)}</td><td style="color:${teamColor}">${player.team}</td><td>${player.kills}</td><td>${player.deaths}</td><td>${player.kpd}</td></tr>`;
+      const teamLabel = player.team === TEAM.RED ? 'Красные' : 'Синие';
+      return `<tr style="${highlight}"><td>${index + 1}</td><td>${this.escapeHtml(player.nick)}</td><td style="color:${teamColor}">${teamLabel}</td><td>${player.kills}</td><td>${player.deaths}</td><td>${player.kpd}</td></tr>`;
     }).join('');
 
     this.statsElement.style.display = 'block';
+    this.applyHudResponsiveLayout();
     this.statsElement.innerHTML = `
       <div style="font-size:22px;font-weight:700;margin-bottom:8px;">${winnerLabel}</div>
       <div style="margin-bottom:14px;color:#cfe3bf;">Красные ${stats.redScore} : ${stats.blueScore} Синие · рестарт через ${this.formatTime(this.phaseTimer)}</div>
       <table style="width:100%;border-collapse:collapse;">
-        <thead><tr style="text-align:left;color:#9fb394;"><th>Ник</th><th>Команда</th><th>Убийства</th><th>Смерти</th><th>КПД</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="5">Нет игроков</td></tr>'}</tbody>
+        <thead><tr style="text-align:left;color:#9fb394;"><th>Место</th><th>Ник</th><th>Команда</th><th>Убийства</th><th>Смерти</th><th>КПД</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6">Нет игроков</td></tr>'}</tbody>
       </table>
     `;
   }
@@ -233,7 +280,9 @@ export abstract class GameSceneHud extends GameSceneNetwork {
     this.chatElement.style.color = '#dce8cc';
     this.chatElement.style.font = '12px Arial, sans-serif';
     this.chatElement.style.textShadow = '0 1px 1px #000';
+    this.chatElement.style.transformOrigin = 'bottom left';
     container.appendChild(this.chatElement);
+    this.applyHudResponsiveLayout();
   }
 
   protected addChatMessage(message: string): void {

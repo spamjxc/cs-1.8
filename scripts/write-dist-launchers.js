@@ -20,6 +20,9 @@ const defaultConfig = {
     host: 'auto',
     port: 3000,
     path: ''
+  },
+  admin: {
+    password: 'radiation'
   }
 };
 

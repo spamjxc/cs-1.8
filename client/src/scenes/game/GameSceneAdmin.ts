@@ -14,6 +14,7 @@ export abstract class GameSceneAdmin extends GameSceneHud {
     this.adminElement.style.position = 'absolute';
     this.adminElement.style.right = '12px';
     this.adminElement.style.top = '12px';
+    this.adminElement.style.transformOrigin = 'top right';
     this.adminElement.style.zIndex = '35';
     this.adminElement.style.display = 'block';
     this.adminElement.style.padding = '8px';
@@ -45,6 +46,7 @@ export abstract class GameSceneAdmin extends GameSceneHud {
     container.appendChild(this.adminElement);
     this.createAdminModal(container);
     this.updateAdminPanel();
+    this.applyAdminResponsiveLayout();
   }
 
   protected styleGameButton(button: HTMLButtonElement): void {
@@ -123,6 +125,7 @@ export abstract class GameSceneAdmin extends GameSceneHud {
       }
     });
     container.appendChild(this.adminModalElement);
+    this.applyAdminResponsiveLayout();
   }
 
   protected handleAdminEvent(event: GameEventPayload): void {
@@ -153,6 +156,25 @@ export abstract class GameSceneAdmin extends GameSceneHud {
       balanceButton.textContent = `Автобаланс: ${this.autoBalance ? 'вкл' : 'выкл'}`;
       balanceButton.style.borderColor = this.autoBalance ? '#9bdc4a' : '#6f805f';
       balanceButton.style.color = this.autoBalance ? '#e8f3d0' : '#dce8cc';
+    }
+
+    this.applyAdminResponsiveLayout();
+  }
+
+  protected applyAdminResponsiveLayout(): void {
+    const scale = this.getHudUiScale();
+    const edge = this.isMobileViewport() ? 8 : 12;
+
+    if (this.adminElement) {
+      this.adminElement.style.right = `${edge}px`;
+      this.adminElement.style.top = `${edge}px`;
+      this.adminElement.style.transform = `scale(${scale})`;
+    }
+
+    const modalPanel = this.adminModalElement?.querySelector('[data-admin-modal-panel]') as HTMLElement | null;
+    if (modalPanel) {
+      modalPanel.style.transform = `scale(${scale})`;
+      modalPanel.style.transformOrigin = 'center center';
     }
   }
 

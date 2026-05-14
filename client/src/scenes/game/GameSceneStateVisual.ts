@@ -113,10 +113,11 @@ export abstract class GameSceneStateVisual extends GameSceneAdmin {
 
   protected updateMobileMove(pointer: Phaser.Input.Pointer): void {
     const config = GAME_CONFIG.MOBILE;
+    const stickRadius = this.getMobileStickRadius();
     const dx = pointer.x - this.mobileStickBase.x;
     const dy = pointer.y - this.mobileStickBase.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    const maxDistance = config.STICK_RADIUS;
+    const maxDistance = stickRadius;
     const clampedDistance = Math.min(distance, maxDistance);
     const angle = Math.atan2(dy, dx);
     const normalizer = distance > config.STICK_DEADZONE ? maxDistance : 1;
@@ -251,7 +252,8 @@ export abstract class GameSceneStateVisual extends GameSceneAdmin {
     }
 
     if (this.mobileMovePointerId !== undefined && stick) {
-      const radius = GAME_CONFIG.MOBILE.STICK_RADIUS;
+      const radius = this.getMobileStickRadius();
+      const knobRadius = 24 * GAME_CONFIG.MOBILE.STICK_SCALE;
       stick.fillStyle(0x11180f, 0.52);
       stick.fillCircle(this.mobileStickBase.x, this.mobileStickBase.y, radius);
       stick.lineStyle(2, 0x9bdc4a, 0.72);
@@ -264,9 +266,9 @@ export abstract class GameSceneStateVisual extends GameSceneAdmin {
       stick.lineTo(this.mobileStickBase.x, this.mobileStickBase.y + radius * 0.62);
       stick.strokePath();
       stick.fillStyle(0x9bdc4a, 0.32);
-      stick.fillCircle(this.mobileStickKnob.x, this.mobileStickKnob.y, 24);
+      stick.fillCircle(this.mobileStickKnob.x, this.mobileStickKnob.y, knobRadius);
       stick.lineStyle(2, 0xe8f3d0, 0.72);
-      stick.strokeCircle(this.mobileStickKnob.x, this.mobileStickKnob.y, 24);
+      stick.strokeCircle(this.mobileStickKnob.x, this.mobileStickKnob.y, knobRadius);
     }
 
     if (this.mobileFirePointerId !== undefined && this.mobileAimTarget && fire) {
@@ -288,6 +290,10 @@ export abstract class GameSceneStateVisual extends GameSceneAdmin {
       fire.lineTo(x, y + 28);
       fire.strokePath();
     }
+  }
+
+  protected getMobileStickRadius(): number {
+    return GAME_CONFIG.MOBILE.STICK_RADIUS * GAME_CONFIG.MOBILE.STICK_SCALE;
   }
 
   protected getMapSeed(): number {
