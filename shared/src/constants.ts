@@ -99,6 +99,7 @@ export const GAME_CONFIG = {
     FALL_GRAVITY_MULTIPLIER: 4.0,
     MAX_FALL_SPEED: 1100,
     CROUCH_HITBOX: { width: 24, height: 29, offsetX: 12, offsetY: 29 },
+    CROUCH_VISUAL_SCALE_Y: 0.68,
     FRICTION: 1000,
     RUN_ANIMATION_FPS: 20
   },
@@ -107,28 +108,28 @@ export const GAME_CONFIG = {
       PISTOL: {
         STAND: { x: 2, y: 0 },
         RUN: { x: 10, y: 4 },
-        CROUCH: { x: 8, y: -2 },
+        CROUCH: { x: 2, y: 8 },
         ORIGIN_X: 0.18,
         DISPLAY_SCALE: 1
       },
       AUTO: {
         STAND: { x: 0, y: 0 },
         RUN: { x: 8, y: 0 },
-        CROUCH: { x: 9, y: -3 },
+        CROUCH: { x: 0, y: 8 },
         ORIGIN_X: 0.16,
         DISPLAY_SCALE: 1.25
       },
       GRENADE: {
         STAND: { x: 2, y: 4 },
         RUN: { x: 4, y: -4 },
-        CROUCH: { x: 7, y: -3 },
+        CROUCH: { x: 2, y: 12 },
         ORIGIN_X: 0.35,
         DISPLAY_SCALE: 1
       },
       RPG: {
         STAND: { x: 0, y: -4 },
         RUN: { x: 8, y: 0 },
-        CROUCH: { x: 10, y: -8 },
+        CROUCH: { x: 0, y: 4 },
         ORIGIN_X: 0.2,
         DISPLAY_SCALE: 1
       }
@@ -162,7 +163,8 @@ export const GAME_CONFIG = {
       STAND_LEFT_CORRECTION_X: 0,
       RUN: { x: 10, y: -24 },
       RUN_LEFT_CORRECTION_X: 0,
-      CROUCH: { x: 0, y: -20 },
+      CROUCH: { x: -3, y: -10 },
+      CROUCH_LEFT_CORRECTION_X: 0,
       RUN_FRAME_BOB_Y: [3, 1, 0, 1, 1, 3, 1, 0, 1, 1],
       NAME_OFFSET_Y: -24
     }

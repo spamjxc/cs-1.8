@@ -5,6 +5,7 @@ import { GameSceneData } from '@client/scenes/LobbyScene';
 type MovementKeys = {
   A: Phaser.Input.Keyboard.Key;
   D: Phaser.Input.Keyboard.Key;
+  S: Phaser.Input.Keyboard.Key;
   W: Phaser.Input.Keyboard.Key;
   SPACE: Phaser.Input.Keyboard.Key;
   CTRL: Phaser.Input.Keyboard.Key;
@@ -55,6 +56,7 @@ const WEAPON_POSE_KEYS: Record<WeaponKind, WeaponPoseKey> = {
 
 export default class GameScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
+  private playerVisual!: Phaser.GameObjects.Sprite;
   private weapon!: Phaser.GameObjects.Sprite;
   private helmet!: Phaser.GameObjects.Sprite;
   private playerName?: Phaser.GameObjects.Text;
@@ -157,10 +159,12 @@ export default class GameScene extends Phaser.Scene {
     
     // Create player sprite
     this.player = this.physics.add.sprite(200, 600, SPRITE_KEYS.PLAYER_IDLE);
+    this.player.setVisible(false);
     this.player.setCollideWorldBounds(false); // We use custom bounds with walls
     this.player.setBounce(0);
     this.player.setDragX(GAME_CONFIG.PLAYER.FRICTION);
     this.player.setData('crouching', false);
+    this.playerVisual = this.add.sprite(this.player.x, this.player.y, SPRITE_KEYS.PLAYER_IDLE);
     
     // Add collider between player and ground
     this.physics.add.collider(this.player, this.groundGroup);
@@ -197,6 +201,7 @@ export default class GameScene extends Phaser.Scene {
     this.keys = this.input.keyboard.addKeys({
       A: Phaser.Input.Keyboard.KeyCodes.A,
       D: Phaser.Input.Keyboard.KeyCodes.D,
+      S: Phaser.Input.Keyboard.KeyCodes.S,
       W: Phaser.Input.Keyboard.KeyCodes.W,
       SPACE: Phaser.Input.Keyboard.KeyCodes.SPACE,
       CTRL: Phaser.Input.Keyboard.KeyCodes.CTRL,
@@ -237,21 +242,22 @@ export default class GameScene extends Phaser.Scene {
     
     // Flip sprite based on direction
     if (dir === 1) {
-      this.player.setFlipX(false);
+      this.playerVisual.setFlipX(false);
     } else if (dir === -1) {
-      this.player.setFlipX(true);
+      this.playerVisual.setFlipX(true);
     }
     
     if (this.player.getData('crouching')) {
-      this.player.anims.stop();
-      this.player.setTexture(SPRITE_KEYS.PLAYER_CROUCH);
+      this.playerVisual.anims.stop();
+      this.playerVisual.setTexture(SPRITE_KEYS.PLAYER_IDLE);
     } else if (Math.abs(body.velocity.x) > 10) {
-      this.player.anims.play(ANIMATION_KEYS.PLAYER_RUN, true);
+      this.playerVisual.anims.play(ANIMATION_KEYS.PLAYER_RUN, true);
     } else {
-      this.player.anims.stop();
-      this.player.setTexture(SPRITE_KEYS.PLAYER_IDLE);
+      this.playerVisual.anims.stop();
+      this.playerVisual.setTexture(SPRITE_KEYS.PLAYER_IDLE);
     }
 
+    this.updatePlayerVisual();
     this.updateAttachedVisuals();
     this.updateChargeBar();
     this.recycleFarProjectiles();
@@ -259,7 +265,9 @@ export default class GameScene extends Phaser.Scene {
 
   private handleJump(): void {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
-    const jumpPressed = Phaser.Input.Keyboard.JustDown(this.keys.W) || Phaser.Input.Keyboard.JustDown(this.keys.SPACE);
+    const jumpPressed = Phaser.Input.Keyboard.JustDown(this.keys.W) ||
+      Phaser.Input.Keyboard.JustDown(this.keys.SPACE) ||
+      Phaser.Input.Keyboard.JustDown(this.cursors.up);
 
     if (body.touching.down || body.blocked.down) {
       this.jumpsLeft = 2;
@@ -286,43 +294,32 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private handleCrouch(): void {
-    const isCrouching = this.keys.CTRL.isDown;
+    const isCrouching = this.keys.CTRL.isDown || this.keys.S.isDown || this.cursors.down.isDown;
 
     if (isCrouching === this.player.getData('crouching')) {
       return;
     }
 
     const body = this.player.body as Phaser.Physics.Arcade.Body;
-    const bottomBefore = body.bottom;
     this.player.setData('crouching', isCrouching);
 
     if (isCrouching) {
-      const crouchHitbox = GAME_CONFIG.PLAYER.CROUCH_HITBOX;
-      this.player.setTexture(SPRITE_KEYS.PLAYER_CROUCH);
-      this.player.setScale(1, 1);
-      body.setSize(crouchHitbox.width, crouchHitbox.height, false);
-      body.setOffset(crouchHitbox.offsetX, crouchHitbox.offsetY);
       this.moveSpeed = GAME_CONFIG.PLAYER.MOVE_SPEED / 2;
     } else {
-      this.player.setTexture(SPRITE_KEYS.PLAYER_IDLE);
-      this.player.setScale(1, 1);
-      body.setSize(ASSET_SPECS.PLAYER.IDLE.width, ASSET_SPECS.PLAYER.IDLE.height, false);
-      body.setOffset(0, 0);
       this.moveSpeed = GAME_CONFIG.PLAYER.MOVE_SPEED;
     }
-
-    this.keepBodyBottomAt(body, bottomBefore);
   }
 
-  private keepBodyBottomAt(body: Phaser.Physics.Arcade.Body, bottomBefore: number): void {
-    const deltaY = bottomBefore - body.bottom;
+  private updatePlayerVisual(): void {
+    const isCrouching = Boolean(this.player.getData('crouching'));
+    const scaleY = isCrouching ? GAME_CONFIG.PLAYER.CROUCH_VISUAL_SCALE_Y : 1;
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    const feetY = body.bottom;
+    const visualHeight = ASSET_SPECS.PLAYER.IDLE.height * scaleY;
 
-    if (Math.abs(deltaY) < 0.01) {
-      return;
-    }
-
-    this.player.y += deltaY;
-    body.updateFromGameObject();
+    this.playerVisual.setScale(1, scaleY);
+    this.playerVisual.setPosition(this.player.x, feetY - visualHeight / 2);
+    this.playerVisual.setDepth(1);
   }
 
   private updateAttachedVisuals(): void {
@@ -335,7 +332,7 @@ export default class GameScene extends Phaser.Scene {
     const aimSign = Math.cos(angle) < 0 ? -1 : 1;
     const facingLeft = aimSign < 0;
     const weaponPose = this.getWeaponPose(isCrouching, isRunning, aimSign, moveSign);
-    const spriteFacingSign = this.player.flipX ? -1 : 1;
+    const spriteFacingSign = this.playerVisual.flipX ? -1 : 1;
     const helmetPose = this.getHelmetPose(isCrouching, isRunning, isRunning ? moveSign : spriteFacingSign);
 
     this.weapon.setPosition(this.player.x + weaponPose.x, this.player.y + weaponPose.y);
@@ -381,7 +378,7 @@ export default class GameScene extends Phaser.Scene {
 
     if (isCrouching) {
       return {
-        x: config.CROUCH.x,
+        x: (config.CROUCH.x * moveSign) + (moveSign < 0 ? config.CROUCH_LEFT_CORRECTION_X : 0),
         y: config.CROUCH.y
       };
     }
@@ -393,7 +390,7 @@ export default class GameScene extends Phaser.Scene {
       };
     }
 
-    const currentFrame = this.player.anims.currentFrame;
+    const currentFrame = this.playerVisual.anims.currentFrame;
     const frameIndex = currentFrame ? currentFrame.index % config.RUN_FRAME_BOB_Y.length : 0;
 
     return {
