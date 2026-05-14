@@ -20,6 +20,7 @@ export default class GameScene extends GameSceneProjectiles {
   private hpText?: Phaser.GameObjects.Text;
   private ghostText?: Phaser.GameObjects.Text;
   private hudElement?: HTMLDivElement;
+  private timerElement?: HTMLDivElement;
   private statsElement?: HTMLDivElement;
   private adminElement?: HTMLDivElement;
   private adminModalElement?: HTMLDivElement;

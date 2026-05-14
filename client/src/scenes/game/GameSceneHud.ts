@@ -16,8 +16,8 @@ export abstract class GameSceneHud extends GameSceneNetwork {
     const baseWarningRange = baseWarningConfig.DAMAGE_WARNING_MAX_ALPHA - baseWarningConfig.DAMAGE_WARNING_MIN_ALPHA;
     const baseWarningPulse = (Math.sin(this.time.now / baseWarningConfig.DAMAGE_WARNING_BLINK_MS) + 1) / 2;
 
-    this.hpText?.setText(`HP ${Math.ceil(this.localHp)} | ${this.getWeaponLabel()} ${this.getAmmoLabel()}`);
-    this.ghostText?.setText(this.localGhost ? `Призрак ${Math.ceil(this.getLocalGhostTimer())}s` : '');
+    this.hpText?.setText('');
+    this.ghostText?.setText('');
     this.updateHudOverlay();
     this.baseWarning?.setAlpha(inEnemyBase && !this.localGhost
       ? baseWarningConfig.DAMAGE_WARNING_MIN_ALPHA + baseWarningPulse * baseWarningRange
@@ -36,15 +36,34 @@ export abstract class GameSceneHud extends GameSceneNetwork {
     this.hudElement.style.top = '12px';
     this.hudElement.style.zIndex = '20';
     this.hudElement.style.pointerEvents = 'none';
-    this.hudElement.style.padding = '7px 10px';
-    this.hudElement.style.border = '1px solid rgba(232, 243, 208, 0.35)';
-    this.hudElement.style.background = 'rgba(8, 12, 9, 0.72)';
+    this.hudElement.style.padding = '9px 12px';
+    this.hudElement.style.border = '2px solid rgba(128, 150, 96, 0.72)';
+    this.hudElement.style.borderRadius = '3px';
+    this.hudElement.style.background = 'rgba(8, 12, 9, 0.82)';
     this.hudElement.style.color = '#e8f3d0';
-    this.hudElement.style.font = '700 14px Arial, sans-serif';
-    this.hudElement.style.lineHeight = '18px';
+    this.hudElement.style.font = '700 15px Arial, sans-serif';
+    this.hudElement.style.lineHeight = '20px';
     this.hudElement.style.textShadow = '0 1px 1px #000';
+    this.hudElement.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.7), inset 0 0 18px rgba(97, 128, 67, 0.16)';
     container.appendChild(this.hudElement);
     this.updateHudOverlay();
+
+    this.timerElement = document.createElement('div');
+    this.timerElement.style.position = 'absolute';
+    this.timerElement.style.left = '50%';
+    this.timerElement.style.bottom = '14px';
+    this.timerElement.style.transform = 'translateX(-50%)';
+    this.timerElement.style.zIndex = '22';
+    this.timerElement.style.pointerEvents = 'none';
+    this.timerElement.style.display = 'flex';
+    this.timerElement.style.gap = '12px';
+    this.timerElement.style.alignItems = 'center';
+    this.timerElement.style.justifyContent = 'center';
+    this.timerElement.style.font = '900 24px Arial, sans-serif';
+    this.timerElement.style.color = '#e8f3d0';
+    this.timerElement.style.textShadow = '0 2px 2px #000';
+    container.appendChild(this.timerElement);
+    this.updateTimerOverlay();
   }
 
   protected updateHudOverlay(): void {
@@ -52,20 +71,38 @@ export abstract class GameSceneHud extends GameSceneNetwork {
       return;
     }
 
-    const ghostLine = this.localGhost ? `<div style="color:#f1d27a">Призрак ${Math.ceil(this.getLocalGhostTimer())}s</div>` : '';
-    const phaseLabel = this.phase === 'fight' ? 'Бой' : this.phase === 'pause' ? 'Пауза' : 'Лобби';
+    this.updateTimerOverlay();
+    const weaponIcon = this.currentWeapon === 'fist'
+      ? ''
+      : `<img src="assets/${this.getCurrentWeaponAssetName()}" style="width:34px;height:22px;object-fit:contain;image-rendering:pixelated;" />`;
     this.hudElement.innerHTML = [
-      `<div>${phaseLabel} ${this.formatTime(this.phaseTimer)}</div>`,
       `<div><span style="color:#ff8a8a">R ${this.redScore}</span> : <span style="color:#86b7ff">B ${this.blueScore}</span></div>`,
-      `<div>HP ${Math.ceil(this.localHp)}</div>`,
-      `<div>${this.getWeaponLabel()} ${this.getAmmoLabel()}</div>`,
-      ghostLine
+      `<div><span style="color:#9fb394">HP</span> <span style="color:#e8f3d0">${Math.ceil(this.localHp)}</span></div>`,
+      `<div style="display:flex;align-items:center;gap:8px;">${weaponIcon}<span style="color:#9fb394">${this.getWeaponLabel()}</span> <span style="color:#e8f3d0">${this.getAmmoLabel()}</span></div>`
     ].join('');
+  }
+
+  protected updateTimerOverlay(): void {
+    if (!this.timerElement) {
+      return;
+    }
+
+    const phaseLabel = this.phase === 'fight' ? 'Бой' : this.phase === 'pause' ? 'Пауза' : 'Лобби';
+    const ghostLine = this.localGhost
+      ? `<span style="color:#f1d27a;border:2px solid rgba(241,210,122,0.55);background:rgba(13,17,14,0.8);padding:6px 10px;">Призрак ${Math.ceil(this.getLocalGhostTimer())}s</span>`
+      : '';
+
+    this.timerElement.innerHTML = `
+      <span style="border:2px solid rgba(128,150,96,0.72);background:rgba(8,12,9,0.82);padding:6px 12px;">${phaseLabel} ${this.formatTime(this.phaseTimer)}</span>
+      ${ghostLine}
+    `;
   }
 
   protected destroyHudOverlay(): void {
     this.hudElement?.remove();
     this.hudElement = undefined;
+    this.timerElement?.remove();
+    this.timerElement = undefined;
     this.statsElement?.remove();
     this.statsElement = undefined;
     this.adminElement?.remove();
@@ -215,4 +252,3 @@ export abstract class GameSceneHud extends GameSceneNetwork {
     return Number.isFinite(numberValue) ? numberValue : fallback;
   }
 }
-

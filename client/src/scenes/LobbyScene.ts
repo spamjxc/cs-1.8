@@ -23,6 +23,10 @@ export default class LobbyScene extends Phaser.Scene {
   private blueButton?: Phaser.GameObjects.Text;
   private playButton?: Phaser.GameObjects.Text;
   private statusText?: Phaser.GameObjects.Text;
+  private balanceText?: Phaser.GameObjects.Text;
+  private autoBalance = false;
+  private lobbyClient?: Client;
+  private lobbyPoll?: Phaser.Time.TimerEvent;
   private gameSceneLoaded = false;
 
   constructor() {
@@ -65,6 +69,13 @@ export default class LobbyScene extends Phaser.Scene {
     this.playButton.on('pointerdown', () => {
       this.joinGame();
     });
+
+    void this.refreshLobbyBalance();
+    this.lobbyPoll = this.time.addEvent({
+      delay: 1500,
+      loop: true,
+      callback: () => void this.refreshLobbyBalance()
+    });
   }
 
   private createTeamButtons(): void {
@@ -87,12 +98,66 @@ export default class LobbyScene extends Phaser.Scene {
     this.redButton.on('pointerdown', () => this.selectTeam(TEAM.RED));
     this.blueButton.on('pointerdown', () => this.selectTeam(TEAM.BLUE));
     this.selectTeam(this.selectedTeam);
+
+    this.balanceText = this.add.text(640, 392, '', {
+      fontSize: '15px',
+      color: '#f1d27a',
+      fontFamily: 'Arial, sans-serif'
+    }).setOrigin(0.5);
   }
 
   private selectTeam(team: TeamId): void {
+    if (this.autoBalance) {
+      return;
+    }
+
     this.selectedTeam = team;
     this.redButton?.setAlpha(team === TEAM.RED ? 1 : 0.55);
     this.blueButton?.setAlpha(team === TEAM.BLUE ? 1 : 0.55);
+  }
+
+  private setAutoBalance(autoBalance: boolean): void {
+    this.autoBalance = autoBalance;
+    this.balanceText?.setText(autoBalance ? 'Включена балансировка: команда будет назначена автоматически' : '');
+    [this.redButton, this.blueButton].forEach((button) => {
+      if (!button) {
+        return;
+      }
+
+      if (autoBalance) {
+        button.disableInteractive();
+        button.setAlpha(0.38);
+        button.setStyle({
+          color: '#8f9b88',
+          backgroundColor: '#263025'
+        });
+      } else {
+        button.setInteractive({ useHandCursor: true });
+        button.setStyle({
+          color: '#ffffff',
+          backgroundColor: button === this.redButton ? '#8a2f2f' : '#2f568a'
+        });
+      }
+    });
+
+    if (!autoBalance) {
+      this.selectTeam(this.selectedTeam);
+    }
+  }
+
+  private async refreshLobbyBalance(): Promise<void> {
+    try {
+      if (!this.lobbyClient) {
+        this.lobbyClient = new Client(await this.getWsEndpoint());
+      }
+
+      const rooms = await this.lobbyClient.getAvailableRooms('game_room');
+      const firstRoom = rooms && rooms.length > 0 ? rooms[0] as any : undefined;
+      const metadata = firstRoom ? firstRoom.metadata : undefined;
+      this.setAutoBalance(Boolean(metadata && metadata.autoBalance));
+    } catch (error) {
+      this.setAutoBalance(false);
+    }
   }
 
   private async joinGame(): Promise<void> {
@@ -108,11 +173,13 @@ export default class LobbyScene extends Phaser.Scene {
         nick,
         team: this.selectedTeam
       });
+      const assignedPlayer = (room.state as any)?.players?.get ? (room.state as any).players.get(room.sessionId) : undefined;
+      const assignedTeam = assignedPlayer ? (assignedPlayer.team === TEAM.BLUE ? TEAM.BLUE : TEAM.RED) : this.selectedTeam;
 
       await this.startGameScene({
         room,
         nick,
-        team: this.selectedTeam
+        team: assignedTeam
       } as GameSceneData);
     } catch (error) {
       console.error('Join failed:', error);
@@ -129,6 +196,9 @@ export default class LobbyScene extends Phaser.Scene {
   }
 
   private async startGameScene(data: GameSceneData): Promise<void> {
+    this.lobbyPoll?.remove(false);
+    this.lobbyPoll = undefined;
+
     if (!this.gameSceneLoaded && !this.scene.get('GameScene')) {
       const module = await import('@client/scenes/GameScene');
       this.scene.add('GameScene', module.default, false);

@@ -1,5 +1,6 @@
 import http from 'http';
 import express from 'express';
+import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { installNode12ColyseusCompat } from './node12Compat';
@@ -27,7 +28,7 @@ const app = express();
 const runtimeConfig = loadRuntimeConfig();
 const PORT = Number(process.env.PORT) || runtimeConfig.server.port;
 const HOST = process.env.HOST || runtimeConfig.server.host;
-const clientDistPath = path.resolve(__dirname, '../../../../dist/client');
+const clientDistPath = resolveClientDistPath();
 const server = http.createServer(app);
 const gameServer = new Server({
   transport: new WebSocketTransport({ server })
@@ -67,6 +68,27 @@ server.listen(PORT, HOST, () => {
   console.log(`LAN URL: http://${lanAddress}:${PORT}`);
   console.log('Colyseus room registered: game_room');
 });
+
+function resolveClientDistPath(): string {
+  const candidates = [
+    process.env.RADIATION_CLIENT_DIST,
+    // Packaged dist layout: <root>/server/server/src -> <root>/client.
+    path.resolve(__dirname, '../../../client'),
+    // Repository layout when running built server through npm start.
+    path.resolve(process.cwd(), 'dist/client'),
+    path.resolve(process.cwd(), 'client'),
+    // Legacy fallback used by older launchers.
+    path.resolve(__dirname, '../../../../dist/client')
+  ].filter((candidate): candidate is string => typeof candidate === 'string' && candidate.length > 0);
+
+  for (let i = 0; i < candidates.length; i++) {
+    if (fs.existsSync(path.join(candidates[i], 'index.html'))) {
+      return candidates[i];
+    }
+  }
+
+  return candidates[0];
+}
 
 function getLanAddress(): string {
   const interfaces = os.networkInterfaces();

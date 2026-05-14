@@ -27,9 +27,8 @@ export abstract class GameSceneAdmin extends GameSceneHud {
     this.adminElement.style.letterSpacing = '0';
     this.adminElement.innerHTML = `
       <button data-action="restart">Пересоздать</button>
-      <button data-action="balance">Автобаланс</button>
+      <button data-action="balance">Автобаланс: выкл</button>
       <button data-action="exit">Выйти</button>
-      <div data-balance-state style="margin-top:7px;color:#9fb394;text-transform:none;"></div>
     `;
     this.adminElement.querySelectorAll('button').forEach((button) => this.styleGameButton(button as HTMLButtonElement));
     this.adminElement.addEventListener('click', (event) => {
@@ -148,10 +147,12 @@ export abstract class GameSceneAdmin extends GameSceneHud {
       return;
     }
 
-    const balance = this.adminElement.querySelector('[data-balance-state]') as HTMLElement | null;
+    const balanceButton = this.adminElement.querySelector('[data-action="balance"]') as HTMLButtonElement | null;
 
-    if (balance) {
-      balance.textContent = `Автобаланс: ${this.autoBalance ? 'вкл' : 'выкл'}`;
+    if (balanceButton) {
+      balanceButton.textContent = `Автобаланс: ${this.autoBalance ? 'вкл' : 'выкл'}`;
+      balanceButton.style.borderColor = this.autoBalance ? '#9bdc4a' : '#6f805f';
+      balanceButton.style.color = this.autoBalance ? '#e8f3d0' : '#dce8cc';
     }
   }
 

@@ -251,6 +251,7 @@ export abstract class GameRoomLifecycle extends Room<RoomState> {
       this.broadcastEvent({ type: 'chat', message: `[ADMIN] Match restarted by ${nick}` });
     } else if (data.type === 'toggle_balance') {
       this.state.autoBalance = !this.state.autoBalance;
+      this.setMetadata({ autoBalance: this.state.autoBalance });
       this.broadcastEvent({
         type: 'admin',
         message: 'balance_toggled',

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as Phaser from 'phaser';
-import { ASSET_SPECS, GAME, GAME_CONFIG, MAP, TEAM, WEAPONS } from '@shared/constants';
+import { ASSET_NAMES, ASSET_SPECS, GAME, GAME_CONFIG, MAP, TEAM, WEAPONS } from '@shared/constants';
 import { MapBuilder } from '@client/entities/MapBuilder';
 import { getPlayerSpawnY } from '@shared/utils/MapGeometry';
 import { NetworkManager } from '@client/systems/NetworkManager';
@@ -114,6 +114,18 @@ export abstract class GameSceneStateVisual extends GameSceneAdmin {
 
   protected getAmmoLabel(): string {
     return this.currentWeapon === 'fist' || this.currentAmmo < 0 ? '∞' : String(this.currentAmmo);
+  }
+
+  protected getCurrentWeaponAssetName(): string {
+    const assets: Record<WeaponKind, string> = {
+      fist: ASSET_NAMES.WEAPON_PISTOL,
+      pistol: ASSET_NAMES.WEAPON_PISTOL,
+      auto: ASSET_NAMES.WEAPON_AUTO,
+      grenade: ASSET_NAMES.WEAPON_GRENADE,
+      rpg: ASSET_NAMES.WEAPON_RPG
+    };
+
+    return assets[this.currentWeapon];
   }
 
   protected tryPickupWeapon(): void {

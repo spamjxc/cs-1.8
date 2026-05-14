@@ -7,17 +7,17 @@ const distScriptsPath = path.join(distPath, 'scripts');
 
 const defaultConfig = {
   server: {
-    host: '127.0.0.1',
+    host: '0.0.0.0',
     port: 3000
   },
   client: {
     protocol: 'http',
-    host: '127.0.0.1',
-    port: 3010
+    host: 'localhost',
+    port: 3000
   },
   websocket: {
     protocol: 'ws',
-    host: '127.0.0.1',
+    host: 'auto',
     port: 3000,
     path: ''
   }
@@ -66,6 +66,7 @@ function writeLauncherScripts() {
     'const configPath = ensureConfig(distPath);',
     'const serverPath = path.join(distPath, "server", "server", "src", "index.js");',
     'const nodePath = process.execPath;',
+    'console.log(process.version);',
     'const child = childProcess.spawn(nodePath, [serverPath], {',
     '  cwd: distPath,',
     '  stdio: "inherit",',
@@ -84,7 +85,12 @@ function writePlatformLaunchers() {
     'cd /d "%~dp0"',
     'set "NODE_EXE=%~dp0node\\win7\\node.exe"',
     'if not exist "%NODE_EXE%" if exist "%~dp0node\\win7\\bin\\node.exe" set "NODE_EXE=%~dp0node\\win7\\bin\\node.exe"',
-    'if not exist "%NODE_EXE%" set "NODE_EXE=node"',
+    'if not exist "%NODE_EXE%" (',
+    '  echo Bundled Node.js not found: %~dp0node\\win7\\node.exe',
+    '  echo Install/copy the bundled runtime into the dist\\node\\win7 folder.',
+    '  pause',
+    '  exit /b 1',
+    ')',
     'echo CS 1.8 Radiation server',
     '"%NODE_EXE%" "%~dp0scripts\\launch-server.js"',
     'pause'
@@ -95,7 +101,11 @@ function writePlatformLaunchers() {
     'DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)',
     'NODE_EXE="$DIR/node/astra/node"',
     'if [ ! -x "$NODE_EXE" ] && [ -x "$DIR/node/astra/bin/node" ]; then NODE_EXE="$DIR/node/astra/bin/node"; fi',
-    'if [ ! -x "$NODE_EXE" ]; then NODE_EXE=node; fi',
+    'if [ ! -x "$NODE_EXE" ]; then',
+    '  echo "Bundled Node.js not found: $DIR/node/astra/node" >&2',
+    '  echo "Install/copy the bundled runtime into the dist/node/astra folder." >&2',
+    '  exit 1',
+    'fi',
     'cd "$DIR" || exit 1',
     'echo "CS 1.8 Radiation server"',
     '"$NODE_EXE" "$DIR/scripts/launch-server.js"'
