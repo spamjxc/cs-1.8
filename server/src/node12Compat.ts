@@ -28,7 +28,9 @@ export function installNode12ColyseusCompat(): void {
   const defaultLoader = extensions['.js'];
 
   extensions['.js'] = (module: NodeModule, filename: string): void => {
-    if (!filename.includes('/node_modules/@colyseus/')) {
+    const normalizedFilename = filename.replace(/\\/g, '/');
+
+    if (!normalizedFilename.includes('/node_modules/@colyseus/')) {
       defaultLoader(module, filename);
       return;
     }
