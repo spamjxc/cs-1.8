@@ -7,7 +7,7 @@ import { GameSceneData } from '@client/scenes/LobbyScene';
 import { NetworkManager } from '@client/systems/NetworkManager';
 import { Interpolator } from '@client/utils/Interpolator';
 import { StatePredictor } from '@client/utils/StatePredictor';
-import type { GameEventPayload, WeaponId } from '@shared/types/network';
+import type { AdminCommandType, GameEventPayload, MatchPhase, StatsPacket, WeaponId } from '@shared/types/network';
 
 type MovementKeys = {
   A: Phaser.Input.Keyboard.Key;
@@ -44,6 +44,7 @@ type RemotePlayerView = {
   interpolator: Interpolator;
   team: typeof TEAM.RED | typeof TEAM.BLUE;
   ghost: boolean;
+  crouch: boolean;
   lastVx: number;
   weaponKind: WeaponKind;
   aimAngle: number;
@@ -90,6 +91,10 @@ export default class GameScene extends Phaser.Scene {
   private hpText?: Phaser.GameObjects.Text;
   private ghostText?: Phaser.GameObjects.Text;
   private hudElement?: HTMLDivElement;
+  private statsElement?: HTMLDivElement;
+  private adminElement?: HTMLDivElement;
+  private adminModalElement?: HTMLDivElement;
+  private chatElement?: HTMLDivElement;
   private baseWarning?: Phaser.GameObjects.Rectangle;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys!: MovementKeys;
@@ -119,8 +124,20 @@ export default class GameScene extends Phaser.Scene {
   private readonly remotePlayers = new Map<string, RemotePlayerView>();
   private localHp = GAME.MAX_HP;
   private localGhost = false;
+  private phase: MatchPhase = 'lobby';
+  private phaseTimer = 0;
+  private redScore = 0;
+  private blueScore = 0;
+  private autoBalance = false;
+  private isAdmin = false;
+  private pendingAdminCommand?: AdminCommandType;
+  private pendingAdminButton?: HTMLButtonElement;
+  private lastStats?: StatsPacket;
+  private currentMapSeed: number = MAP.DEFAULT_SEED;
+  private readonly chatMessages: string[] = [];
   private readonly windowMouseDownHandler = (event: MouseEvent): void => this.handleWindowMouseDown(event);
   private readonly windowMouseUpHandler = (event: MouseEvent): void => this.handleWindowMouseUp(event);
+  private readonly resizeHandler = (): void => this.configureCamera();
   private fistArmTween?: Phaser.Tweens.Tween;
 
   constructor() {
@@ -169,15 +186,15 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.physics.world.setBounds(0, 0, MAP.WIDTH, MAP.HEIGHT);
-    this.cameras.main.setBounds(0, 0, MAP.WIDTH, MAP.HEIGHT);
-    this.cameras.main.setZoom(GAME_CONFIG.CAMERA.ZOOM);
+    this.configureCamera();
     this.addBaseZones();
 
     this.groundGroup = this.physics.add.staticGroup();
+    this.currentMapSeed = this.getMapSeed();
     new MapBuilder(this.groundGroup, {
       floor: SPRITE_KEYS.FLOOR,
       box: SPRITE_KEYS.BOX
-    }).build(this.getMapSeed());
+    }).build(this.currentMapSeed);
     
     // Create player sprite
     const spawnX = this.team === TEAM.RED ? MAP.RED_SPAWN_X : MAP.BLUE_SPAWN_X;
@@ -273,7 +290,12 @@ export default class GameScene extends Phaser.Scene {
     this.installWindowMouseListeners();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.removeWindowMouseListeners, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.destroyHudOverlay, this);
+    this.scale.on('resize', this.resizeHandler);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off('resize', this.resizeHandler));
     this.createHudOverlay();
+    this.createStatsOverlay();
+    this.createAdminPanel();
+    this.createChatOverlay();
     this.setupNetwork();
     this.setupPickupStateSync();
     this.cameras.main.startFollow(
@@ -289,8 +311,24 @@ export default class GameScene extends Phaser.Scene {
   }
 
   update(): void {
+    this.syncMatchState();
     this.updateRemotePlayers();
     this.updateHud();
+
+    if (this.phase !== 'fight') {
+      const body = this.player.body as Phaser.Physics.Arcade.Body;
+      body.setVelocity(0, 0);
+      body.setAllowGravity(false);
+      this.stopAutoFire();
+      this.chargeBar?.clear();
+      this.updatePlayerVisual();
+      this.updateAttachedVisuals();
+      this.checkProjectileHits();
+      this.recycleFarProjectiles();
+      return;
+    }
+
+    (this.player.body as Phaser.Physics.Arcade.Body).setAllowGravity(!this.localGhost);
 
     if (this.localGhost) {
       this.stopAutoFire();
@@ -350,6 +388,16 @@ export default class GameScene extends Phaser.Scene {
     this.recycleFarProjectiles();
   }
 
+  private configureCamera(): void {
+    const camera = this.cameras.main;
+
+    camera.setZoom(GAME_CONFIG.CAMERA.ZOOM);
+    camera.setDeadzone(200, 150);
+    camera.setBounds(0, 0, MAP.WIDTH, MAP.HEIGHT);
+    camera.setBackgroundColor('#1a1a1a');
+    this.physics.world.setBounds(0, 0, MAP.WIDTH, MAP.HEIGHT);
+  }
+
   private addBaseZones(): void {
     this.add.rectangle(MAP.BASE_WIDTH / 2, MAP.HEIGHT / 2, MAP.BASE_WIDTH, MAP.HEIGHT, 0x8a2f2f, 0.24).setDepth(-1);
     this.add.rectangle(MAP.WIDTH - MAP.BASE_WIDTH / 2, MAP.HEIGHT / 2, MAP.BASE_WIDTH, MAP.HEIGHT, 0x2f568a, 0.24).setDepth(-1);
@@ -394,8 +442,8 @@ export default class GameScene extends Phaser.Scene {
     }
 
     sprite.setTexture(this.getWeaponTexture(weapon));
-    sprite.setPosition(Number(pickup.x) || 0, Number(pickup.y) || 0);
-    sprite.setData('ammo', Number(pickup.ammo) || 0);
+    sprite.setPosition(this.toFiniteNumber(pickup.x, 0), this.toFiniteNumber(pickup.y, 0));
+    sprite.setData('ammo', this.toFiniteNumber(pickup.ammo, 0));
     sprite.refreshBody();
   }
 
@@ -451,14 +499,15 @@ export default class GameScene extends Phaser.Scene {
 
     remote.team = player.team;
     remote.ghost = Boolean(player.ghost);
+    remote.crouch = Boolean(player.crouch);
     remote.weaponKind = this.normalizeWeapon(player.weapon);
-    remote.aimAngle = Number(player.aimAngle) || 0;
+    remote.aimAngle = this.toFiniteNumber(player.aimAngle, 0);
     remote.interpolator.push({
-      tick: Number(player.lastInputTick) || 0,
-      x: Number(player.x) || 0,
-      y: Number(player.y) || 0,
-      vx: Number(player.vx) || 0,
-      vy: Number(player.vy) || 0
+      tick: this.toFiniteNumber(player.lastInputTick, 0),
+      x: this.toFiniteNumber(player.x, 0),
+      y: this.toFiniteNumber(player.y, 0),
+      vx: this.toFiniteNumber(player.vx, 0),
+      vy: this.toFiniteNumber(player.vy, 0)
     });
     remote.helmet.setTexture(player.team === TEAM.RED ? SPRITE_KEYS.HELMET_RED : SPRITE_KEYS.HELMET_BLUE);
     remote.name.setText(player.nick || 'Player');
@@ -518,9 +567,10 @@ export default class GameScene extends Phaser.Scene {
       interpolator: new Interpolator(),
       team: player.team,
       ghost: Boolean(player.ghost),
-      lastVx: Number(player.vx) || 0,
+      crouch: Boolean(player.crouch),
+      lastVx: this.toFiniteNumber(player.vx, 0),
       weaponKind,
-      aimAngle: Number(player.aimAngle) || 0
+      aimAngle: this.toFiniteNumber(player.aimAngle, 0)
     };
   }
 
@@ -536,7 +586,11 @@ export default class GameScene extends Phaser.Scene {
       this.updateRemoteRunAnimation(remote);
       this.updateRemoteWeaponVisual(remote);
 
-      const helmetPose = GAME_CONFIG.VISUALS.HELMET.STAND;
+      const isRunning = !remote.ghost && !remote.crouch && Math.abs(remote.lastVx) > 10;
+      const moveSign = remote.lastVx < -10 ? -1 : 1;
+      const spriteFacingSign = remote.visual.flipX ? -1 : 1;
+      const frameIndex = remote.visual.anims.currentFrame ? remote.visual.anims.currentFrame.index : 0;
+      const helmetPose = this.getHelmetPoseForFrame(remote.crouch && !remote.ghost, isRunning, isRunning ? moveSign : spriteFacingSign, frameIndex);
       remote.helmet.setPosition(remote.visual.x + helmetPose.x, remote.visual.y + helmetPose.y);
       remote.name.setPosition(remote.helmet.x, remote.helmet.y + GAME_CONFIG.VISUALS.HELMET.NAME_OFFSET_Y);
       remote.hp?.setPosition(remote.helmet.x, remote.helmet.y + GAME_CONFIG.VISUALS.HELMET.NAME_OFFSET_Y - 14);
@@ -549,11 +603,18 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
 
-    if (Math.abs(remote.lastVx) > 10) {
+    if (remote.crouch) {
+      remote.visual.anims.stop();
+      remote.visual.setTexture(SPRITE_KEYS.PLAYER_IDLE);
+      remote.visual.setScale(1, GAME_CONFIG.PLAYER.CROUCH_VISUAL_SCALE_Y);
+      remote.visual.setFlipX(remote.lastVx < -10);
+    } else if (Math.abs(remote.lastVx) > 10) {
+      remote.visual.setScale(1, 1);
       remote.visual.setTexture(SPRITE_KEYS.PLAYER_RUN);
       remote.visual.anims.play(ANIMATION_KEYS.PLAYER_RUN, true);
       remote.visual.setFlipX(remote.lastVx < 0);
     } else {
+      remote.visual.setScale(1, 1);
       remote.visual.anims.stop();
       remote.visual.setTexture(SPRITE_KEYS.PLAYER_IDLE);
     }
@@ -576,9 +637,9 @@ export default class GameScene extends Phaser.Scene {
     const isFist = remote.weaponKind === 'fist';
     const angle = remote.aimAngle;
     const aimSign = Math.cos(angle) < 0 ? -1 : 1;
-    const isRunning = !remote.ghost && Math.abs(remote.lastVx) > 10;
+    const isRunning = !remote.ghost && !remote.crouch && Math.abs(remote.lastVx) > 10;
     const moveSign = remote.lastVx < -10 ? -1 : 1;
-    const pose = this.getWeaponPoseForKind(remote.weaponKind, false, isRunning, aimSign, moveSign);
+    const pose = this.getWeaponPoseForKind(remote.weaponKind, remote.crouch, isRunning, aimSign, moveSign);
 
     remote.weapon.setVisible(!hidden && !isFist);
     remote.fistArm.setVisible(!hidden && isFist);
@@ -618,7 +679,11 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private applyLocalServerState(player: any): void {
-    this.predictor.correct(this.player, Number(player.x) || this.player.x, Number(player.y) || this.player.y);
+    this.predictor.correct(
+      this.player,
+      this.toFiniteNumber(player.x, this.player.x),
+      this.toFiniteNumber(player.y, this.player.y)
+    );
     this.applyGhostVisual(this.playerVisual, Boolean(player.ghost));
     this.player.setData('ghost', Boolean(player.ghost));
 
@@ -628,6 +693,41 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private handleNetworkEvent(event: GameEventPayload): void {
+    if (event.type === 'phase_change') {
+      this.phase = this.normalizePhase(event.phase);
+      this.phaseTimer = typeof event.timer === 'number' ? event.timer : this.phaseTimer;
+      this.redScore = typeof event.redScore === 'number' ? event.redScore : this.redScore;
+      this.blueScore = typeof event.blueScore === 'number' ? event.blueScore : this.blueScore;
+      if (this.phase === 'fight') {
+        this.clearCombatObjects();
+      }
+      if (event.stats) {
+        this.lastStats = event.stats;
+      }
+      this.updateStatsOverlay();
+      return;
+    }
+
+    if (event.type === 'stats') {
+      if (event.stats) {
+        this.lastStats = event.stats;
+      }
+      this.redScore = typeof event.redScore === 'number' ? event.redScore : this.redScore;
+      this.blueScore = typeof event.blueScore === 'number' ? event.blueScore : this.blueScore;
+      this.updateStatsOverlay();
+      return;
+    }
+
+    if (event.type === 'admin') {
+      this.handleAdminEvent(event);
+      return;
+    }
+
+    if (event.type === 'chat' && event.message) {
+      this.addChatMessage(event.message);
+      return;
+    }
+
     if (event.type === 'explode') {
       this.spawnExplosion(event.x || 0, event.y || 0);
       this.applyExplosionKnockback(event.x || 0, event.y || 0, event.radius || 0, event.knockback || 0);
@@ -637,6 +737,12 @@ export default class GameScene extends Phaser.Scene {
     if (this.network && event.targetId === this.network.getSessionId()) {
       if (event.type === 'respawn') {
         this.snapLocalToServerState(event);
+        if (event.weapon) {
+          this.setWeapon(event.weapon);
+        }
+        if (typeof event.ammo === 'number') {
+          this.currentAmmo = event.ammo;
+        }
       } else if (event.type === 'pickup' && event.weapon) {
         this.setWeapon(event.weapon);
         this.currentAmmo = typeof event.ammo === 'number' ? event.ammo : this.currentAmmo;
@@ -654,8 +760,16 @@ export default class GameScene extends Phaser.Scene {
     if (remote) {
       if (event.type === 'respawn') {
         const fallbackX = remote.team === TEAM.RED ? MAP.RED_SPAWN_X : MAP.BLUE_SPAWN_X;
-        remote.body.setPosition(event.x ?? fallbackX, event.y ?? getPlayerSpawnY(this.getMapSeed(), fallbackX));
+        const x = event.x ?? fallbackX;
+        const y = event.y ?? getPlayerSpawnY(this.getMapSeed(), fallbackX);
+        remote.body.setPosition(x, y);
         remote.visual.setPosition(remote.body.x, remote.body.y);
+        remote.lastVx = 0;
+        remote.interpolator.reset({ tick: 0, x, y, vx: 0, vy: 0 });
+        if (event.weapon) {
+          remote.weaponKind = event.weapon;
+          this.updateRemoteWeaponTexture(remote);
+        }
       } else if ((event.type === 'pickup' || event.type === 'ammo') && event.weapon) {
         remote.weaponKind = event.weapon;
         this.updateRemoteWeaponTexture(remote);
@@ -676,8 +790,28 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.player.setPosition(x, y);
-    (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(0, 0);
+    body.setAllowGravity(!this.localGhost);
+    body.checkCollision.none = this.localGhost;
     this.suppressInputUntil = this.time.now + 250;
+  }
+
+  private clearCombatObjects(): void {
+    this.projectiles.children.each((child) => {
+      this.disableProjectile(child as Phaser.GameObjects.GameObject);
+      return true;
+    });
+
+    this.explosions.children.each((child) => {
+      const explosion = child as Phaser.GameObjects.Sprite;
+      explosion.setActive(false).setVisible(false);
+      return true;
+    });
+
+    this.stopAutoFire();
+    this.isChargingGrenade = false;
+    this.chargeBar?.clear();
   }
 
   private updateHud(): void {
@@ -723,7 +857,10 @@ export default class GameScene extends Phaser.Scene {
     }
 
     const ghostLine = this.localGhost ? `<div style="color:#f1d27a">Призрак ${Math.ceil(this.getLocalGhostTimer())}s</div>` : '';
+    const phaseLabel = this.phase === 'fight' ? 'Бой' : this.phase === 'pause' ? 'Пауза' : 'Лобби';
     this.hudElement.innerHTML = [
+      `<div>${phaseLabel} ${this.formatTime(this.phaseTimer)}</div>`,
+      `<div><span style="color:#ff8a8a">R ${this.redScore}</span> : <span style="color:#86b7ff">B ${this.blueScore}</span></div>`,
       `<div>HP ${Math.ceil(this.localHp)}</div>`,
       `<div>${this.getWeaponLabel()} ${this.getAmmoLabel()}</div>`,
       ghostLine
@@ -733,12 +870,397 @@ export default class GameScene extends Phaser.Scene {
   private destroyHudOverlay(): void {
     this.hudElement?.remove();
     this.hudElement = undefined;
+    this.statsElement?.remove();
+    this.statsElement = undefined;
+    this.adminElement?.remove();
+    this.adminElement = undefined;
+    this.adminModalElement?.remove();
+    this.adminModalElement = undefined;
+    this.chatElement?.remove();
+    this.chatElement = undefined;
+  }
+
+  private createStatsOverlay(): void {
+    const container = document.getElementById('game-container');
+    if (!container) {
+      return;
+    }
+
+    this.statsElement = document.createElement('div');
+    this.statsElement.style.position = 'absolute';
+    this.statsElement.style.left = '50%';
+    this.statsElement.style.top = '50%';
+    this.statsElement.style.transform = 'translate(-50%, -50%)';
+    this.statsElement.style.width = 'min(720px, calc(100vw - 32px))';
+    this.statsElement.style.maxHeight = 'min(620px, calc(100vh - 32px))';
+    this.statsElement.style.overflow = 'auto';
+    this.statsElement.style.zIndex = '30';
+    this.statsElement.style.display = 'none';
+    this.statsElement.style.padding = '18px';
+    this.statsElement.style.border = '1px solid rgba(232, 243, 208, 0.34)';
+    this.statsElement.style.background = 'rgba(8, 12, 9, 0.9)';
+    this.statsElement.style.color = '#e8f3d0';
+    this.statsElement.style.font = '14px Arial, sans-serif';
+    container.appendChild(this.statsElement);
+  }
+
+  private updateStatsOverlay(): void {
+    if (!this.statsElement) {
+      return;
+    }
+
+    if (this.phase !== 'pause') {
+      this.statsElement.style.display = 'none';
+      return;
+    }
+
+    const stats = this.lastStats || {
+      redScore: this.redScore,
+      blueScore: this.blueScore,
+      winner: this.redScore === this.blueScore ? 'draw' : this.redScore > this.blueScore ? TEAM.RED : TEAM.BLUE,
+      players: this.collectStatsRows()
+    };
+    const winnerLabel = stats.winner === 'draw' ? 'Ничья' : stats.winner === TEAM.RED ? 'Красные' : 'Синие';
+    const localId = this.network?.getSessionId();
+    const rows = stats.players.map((player) => {
+      const highlight = player.id === localId ? 'background:rgba(255,215,0,0.25);font-weight:700;' : '';
+      const teamColor = player.team === TEAM.RED ? '#ff8a8a' : '#86b7ff';
+      return `<tr style="${highlight}"><td>${this.escapeHtml(player.nick)}</td><td style="color:${teamColor}">${player.team}</td><td>${player.kills}</td><td>${player.deaths}</td><td>${player.kpd}</td></tr>`;
+    }).join('');
+
+    this.statsElement.style.display = 'block';
+    this.statsElement.innerHTML = `
+      <div style="font-size:22px;font-weight:700;margin-bottom:8px;">${winnerLabel}</div>
+      <div style="margin-bottom:14px;color:#cfe3bf;">Красные ${stats.redScore} : ${stats.blueScore} Синие · рестарт через ${this.formatTime(this.phaseTimer)}</div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr style="text-align:left;color:#9fb394;"><th>Ник</th><th>Команда</th><th>Убийства</th><th>Смерти</th><th>КПД</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5">Нет игроков</td></tr>'}</tbody>
+      </table>
+    `;
+  }
+
+  private collectStatsRows(): StatsPacket['players'] {
+    const rows: StatsPacket['players'] = [];
+    const players = (this.room?.state as any)?.players;
+
+    if (!players) {
+      return rows;
+    }
+
+    players.forEach((player: any, id: string) => {
+      const kills = this.toFiniteNumber(player.kills, 0);
+      const deaths = this.toFiniteNumber(player.deaths, 0);
+      rows.push({
+        id,
+        nick: player.nick || 'Player',
+        team: player.team === TEAM.BLUE ? TEAM.BLUE : TEAM.RED,
+        kills,
+        deaths,
+        kpd: kills - deaths
+      });
+    });
+
+    return rows.sort((a, b) => b.kpd - a.kpd || b.kills - a.kills || a.deaths - b.deaths);
+  }
+
+  private createAdminPanel(): void {
+    const container = document.getElementById('game-container');
+    if (!container) {
+      return;
+    }
+
+    this.adminElement = document.createElement('div');
+    this.adminElement.style.position = 'absolute';
+    this.adminElement.style.right = '12px';
+    this.adminElement.style.top = '12px';
+    this.adminElement.style.zIndex = '35';
+    this.adminElement.style.display = 'block';
+    this.adminElement.style.padding = '8px';
+    this.adminElement.style.border = '2px solid rgba(128, 150, 96, 0.72)';
+    this.adminElement.style.borderRadius = '3px';
+    this.adminElement.style.background = 'rgba(13, 17, 14, 0.88)';
+    this.adminElement.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.7), inset 0 0 18px rgba(97, 128, 67, 0.16)';
+    this.adminElement.style.color = '#e8f3d0';
+    this.adminElement.style.font = '700 12px Arial, sans-serif';
+    this.adminElement.style.textTransform = 'uppercase';
+    this.adminElement.style.letterSpacing = '0';
+    this.adminElement.innerHTML = `
+      <button data-action="restart">Пересоздать</button>
+      <button data-action="balance">Автобаланс</button>
+      <button data-action="exit">Выйти</button>
+      <div data-balance-state style="margin-top:7px;color:#9fb394;text-transform:none;"></div>
+    `;
+    this.adminElement.querySelectorAll('button').forEach((button) => this.styleGameButton(button as HTMLButtonElement));
+    this.adminElement.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement;
+      const action = target.getAttribute('data-action');
+      if (action === 'restart') {
+        this.requestAdminCommand('restart', target as HTMLButtonElement);
+      } else if (action === 'balance') {
+        this.requestAdminCommand('toggle_balance', target as HTMLButtonElement);
+      } else if (action === 'exit') {
+        this.exitToLobby();
+      }
+    });
+    container.appendChild(this.adminElement);
+    this.createAdminModal(container);
+    this.updateAdminPanel();
+  }
+
+  private styleGameButton(button: HTMLButtonElement): void {
+    button.style.minWidth = '96px';
+    button.style.height = '30px';
+    button.style.marginRight = '6px';
+    button.style.padding = '0 9px';
+    button.style.border = '1px solid #6f805f';
+    button.style.borderRadius = '2px';
+    button.style.background = 'linear-gradient(180deg, #263025 0%, #151d16 100%)';
+    button.style.color = '#dce8cc';
+    button.style.font = '700 12px Arial, sans-serif';
+    button.style.textTransform = 'uppercase';
+    button.style.letterSpacing = '0';
+    button.style.textShadow = '0 1px 1px #000';
+    button.style.cursor = 'pointer';
+    button.style.boxShadow = 'inset 0 1px 0 rgba(232,243,208,0.12), 0 2px 0 #070907';
+  }
+
+  private createAdminModal(container: HTMLElement): void {
+    this.adminModalElement = document.createElement('div');
+    this.adminModalElement.style.position = 'absolute';
+    this.adminModalElement.style.left = '0';
+    this.adminModalElement.style.top = '0';
+    this.adminModalElement.style.width = '100%';
+    this.adminModalElement.style.height = '100%';
+    this.adminModalElement.style.zIndex = '60';
+    this.adminModalElement.style.display = 'none';
+    this.adminModalElement.style.alignItems = 'center';
+    this.adminModalElement.style.justifyContent = 'center';
+    this.adminModalElement.style.background = 'rgba(5, 8, 6, 0.62)';
+    this.adminModalElement.innerHTML = `
+      <div data-admin-modal-panel style="width:min(360px,calc(100% - 32px));border:2px solid rgba(128,150,96,0.78);border-radius:3px;background:#111711;color:#e8f3d0;padding:16px;box-shadow:0 0 0 1px #000,inset 0 0 22px rgba(97,128,67,0.2);font:700 13px Arial,sans-serif;">
+        <div style="font-size:16px;text-transform:uppercase;margin-bottom:10px;">Пароль администратора</div>
+        <input data-admin-password type="password" autocomplete="off" style="width:100%;height:38px;background:#0a0f0b;color:#e8f3d0;border:1px solid #6f805f;border-radius:2px;padding:0 10px;font:700 16px Arial,sans-serif;outline:none;" />
+        <div data-admin-error style="min-height:18px;margin-top:8px;color:#f1d27a;"></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+          <button data-action="cancel-password">Отмена</button>
+          <button data-action="submit-password">OK</button>
+        </div>
+      </div>
+    `;
+    this.adminModalElement.querySelectorAll('button').forEach((button) => this.styleGameButton(button as HTMLButtonElement));
+    this.adminModalElement.addEventListener('click', (event) => {
+      if (event.target === this.adminModalElement) {
+        this.closeAdminModal();
+        return;
+      }
+
+      const target = event.target as HTMLElement;
+      const action = target.getAttribute('data-action');
+      if (action === 'cancel-password') {
+        this.closeAdminModal();
+      } else if (action === 'submit-password') {
+        this.submitAdminPassword();
+      }
+    });
+    this.adminModalElement.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        this.submitAdminPassword();
+      } else if (event.key === 'Escape') {
+        this.closeAdminModal();
+      }
+    });
+    container.appendChild(this.adminModalElement);
+  }
+
+  private handleAdminEvent(event: GameEventPayload): void {
+    if (typeof event.autoBalance === 'boolean') {
+      this.autoBalance = event.autoBalance;
+    }
+
+    if (this.network && event.targetId === this.network.getSessionId() && event.message === 'granted') {
+      this.isAdmin = true;
+      this.addChatMessage('[ADMIN] Доступ открыт');
+      this.runPendingAdminCommand();
+    } else if (this.network && event.targetId === this.network.getSessionId() && event.message === 'auth_failed') {
+      this.setPendingAdminButton(false);
+      this.setAdminModalError('Неверный пароль');
+    }
+
+    this.updateAdminPanel();
+  }
+
+  private updateAdminPanel(): void {
+    if (!this.adminElement) {
+      return;
+    }
+
+    const balance = this.adminElement.querySelector('[data-balance-state]') as HTMLElement | null;
+
+    if (balance) {
+      balance.textContent = `Автобаланс: ${this.autoBalance ? 'вкл' : 'выкл'}`;
+    }
+  }
+
+  private requestAdminCommand(type: AdminCommandType, button?: HTMLButtonElement): void {
+    if (!this.network) {
+      this.addChatMessage('[ADMIN] Сервер недоступен');
+      return;
+    }
+
+    if (this.isAdmin) {
+      this.network.sendAdminCommand({ type });
+      return;
+    }
+
+    this.pendingAdminCommand = type;
+    this.pendingAdminButton = button;
+    this.openAdminModal();
+  }
+
+  private openAdminModal(): void {
+    if (!this.adminModalElement) {
+      return;
+    }
+
+    const input = this.adminModalElement.querySelector('[data-admin-password]') as HTMLInputElement | null;
+    const error = this.adminModalElement.querySelector('[data-admin-error]') as HTMLElement | null;
+
+    if (input) {
+      input.value = '';
+    }
+    if (error) {
+      error.textContent = '';
+    }
+
+    this.adminModalElement.style.display = 'flex';
+    window.setTimeout(() => input?.focus(), 0);
+  }
+
+  private closeAdminModal(): void {
+    if (this.adminModalElement) {
+      this.adminModalElement.style.display = 'none';
+    }
+    this.setPendingAdminButton(false);
+    this.pendingAdminCommand = undefined;
+    this.pendingAdminButton = undefined;
+  }
+
+  private submitAdminPassword(): void {
+    if (!this.network || !this.adminModalElement) {
+      return;
+    }
+
+    const input = this.adminModalElement.querySelector('[data-admin-password]') as HTMLInputElement | null;
+    const password = input?.value.trim() || '';
+    if (!password) {
+      this.setAdminModalError('Введите пароль');
+      return;
+    }
+
+    this.setPendingAdminButton(true);
+    this.network.sendAdminAuth(password);
+  }
+
+  private runPendingAdminCommand(): void {
+    if (!this.pendingAdminCommand || !this.network) {
+      return;
+    }
+
+    this.network.sendAdminCommand({ type: this.pendingAdminCommand });
+    this.setPendingAdminButton(false);
+    if (this.adminModalElement) {
+      this.adminModalElement.style.display = 'none';
+    }
+    this.pendingAdminCommand = undefined;
+    this.pendingAdminButton = undefined;
+  }
+
+  private setAdminModalError(message: string): void {
+    const error = this.adminModalElement?.querySelector('[data-admin-error]') as HTMLElement | null;
+    if (error) {
+      error.textContent = message;
+    }
+  }
+
+  private setPendingAdminButton(disabled: boolean): void {
+    if (!this.pendingAdminButton) {
+      return;
+    }
+
+    this.pendingAdminButton.disabled = disabled;
+    this.pendingAdminButton.style.opacity = disabled ? '0.55' : '1';
+  }
+
+  private exitToLobby(): void {
+    if (this.room) {
+      void this.room.leave();
+      this.room = undefined;
+      this.network = undefined;
+    }
+
+    this.scene.start('LobbyScene');
+  }
+
+  private createChatOverlay(): void {
+    const container = document.getElementById('game-container');
+    if (!container) {
+      return;
+    }
+
+    this.chatElement = document.createElement('div');
+    this.chatElement.style.position = 'absolute';
+    this.chatElement.style.left = '12px';
+    this.chatElement.style.bottom = '12px';
+    this.chatElement.style.width = 'min(520px, calc(100vw - 24px))';
+    this.chatElement.style.zIndex = '25';
+    this.chatElement.style.pointerEvents = 'none';
+    this.chatElement.style.color = '#dce8cc';
+    this.chatElement.style.font = '12px Arial, sans-serif';
+    this.chatElement.style.textShadow = '0 1px 1px #000';
+    container.appendChild(this.chatElement);
+  }
+
+  private addChatMessage(message: string): void {
+    this.chatMessages.push(message);
+    while (this.chatMessages.length > 5) {
+      this.chatMessages.shift();
+    }
+
+    if (!this.chatElement) {
+      return;
+    }
+
+    this.chatElement.innerHTML = this.chatMessages
+      .map((line) => `<div>${this.escapeHtml(line)}</div>`)
+      .join('');
+  }
+
+  private formatTime(totalSeconds: number): string {
+    const seconds = Math.max(0, Math.ceil(totalSeconds));
+    const minutes = Math.floor(seconds / 60);
+    const rest = seconds % 60;
+
+    return `${minutes}:${rest < 10 ? '0' : ''}${rest}`;
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  private toFiniteNumber(value: unknown, fallback: number): number {
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) ? numberValue : fallback;
   }
 
   private getLocalGhostTimer(): number {
     const state = this.room?.state as any;
     const player = state?.players?.get ? state.players.get(this.network?.getSessionId()) : undefined;
-    return Number(player?.ghostTimer) || 0;
+    return this.toFiniteNumber(player?.ghostTimer, 0);
   }
 
   private isLocalInEnemyBase(): boolean {
@@ -748,12 +1270,56 @@ export default class GameScene extends Phaser.Scene {
 
   private getMapSeed(): number {
     const state = this.room?.state as any;
-    return Number(state?.mapSeed) || MAP.DEFAULT_SEED;
+    return this.toFiniteNumber(state?.mapSeed, MAP.DEFAULT_SEED);
+  }
+
+  private syncMatchState(): void {
+    const state = this.room?.state as any;
+    if (!state) {
+      this.phase = 'fight';
+      return;
+    }
+
+    const phase = this.normalizePhase(state.phase);
+    if (phase !== this.phase) {
+      this.phase = phase;
+      this.updateStatsOverlay();
+    }
+
+    this.phaseTimer = Math.max(0, this.toFiniteNumber(state.phaseTimer, 0));
+    this.redScore = this.toFiniteNumber(state.redScore, 0);
+    this.blueScore = this.toFiniteNumber(state.blueScore, 0);
+    this.autoBalance = Boolean(state.autoBalance);
+    this.updateAdminPanel();
+    if (this.phase === 'pause') {
+      this.updateStatsOverlay();
+    }
+
+    const seed = this.getMapSeed();
+    if (seed !== this.currentMapSeed && this.groundGroup) {
+      this.rebuildMap(seed);
+    }
+  }
+
+  private normalizePhase(phase: unknown): MatchPhase {
+    return phase === 'lobby' || phase === 'pause' || phase === 'fight' ? phase : 'fight';
+  }
+
+  private rebuildMap(seed: number): void {
+    this.currentMapSeed = seed;
+    this.groundGroup.clear(true, true);
+    new MapBuilder(this.groundGroup, {
+      floor: SPRITE_KEYS.FLOOR,
+      box: SPRITE_KEYS.BOX
+    }).build(seed);
+    this.pickupSprites.forEach((sprite) => sprite.destroy());
+    this.pickupSprites.clear();
+    this.setupPickupStateSync();
   }
 
   private syncLocalWeapon(player: any): void {
     const weapon = this.normalizeWeapon(player.weapon);
-    const ammo = Number(player.ammo);
+    const ammo = this.toFiniteNumber(player.ammo, Number.NaN);
 
     if (weapon !== this.currentWeapon) {
       this.setWeapon(weapon);
@@ -1058,6 +1624,13 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private getHelmetPose(isCrouching: boolean, isRunning: boolean, moveSign: number): PosePoint {
+    const currentFrame = this.playerVisual.anims.currentFrame;
+    const frameIndex = currentFrame ? currentFrame.index : 0;
+
+    return this.getHelmetPoseForFrame(isCrouching, isRunning, moveSign, frameIndex);
+  }
+
+  private getHelmetPoseForFrame(isCrouching: boolean, isRunning: boolean, moveSign: number, frameIndex: number): PosePoint {
     const config = GAME_CONFIG.VISUALS.HELMET;
 
     if (isCrouching) {
@@ -1074,12 +1647,11 @@ export default class GameScene extends Phaser.Scene {
       };
     }
 
-    const currentFrame = this.playerVisual.anims.currentFrame;
-    const frameIndex = currentFrame ? currentFrame.index % config.RUN_FRAME_BOB_Y.length : 0;
+    const bobIndex = frameIndex % config.RUN_FRAME_BOB_Y.length;
 
     return {
       x: (config.RUN.x * moveSign) + (moveSign < 0 ? config.RUN_LEFT_CORRECTION_X : 0),
-      y: config.RUN.y + config.RUN_FRAME_BOB_Y[frameIndex]
+      y: config.RUN.y + config.RUN_FRAME_BOB_Y[bobIndex]
     };
   }
 

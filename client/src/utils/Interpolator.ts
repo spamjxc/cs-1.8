@@ -20,6 +20,11 @@ export class Interpolator {
     }
   }
 
+  reset(sample: InterpolationSample): void {
+    this.samples.length = 0;
+    this.samples.push(sample);
+  }
+
   update(): InterpolationSample | undefined {
     if (this.samples.length === 0) {
       return undefined;

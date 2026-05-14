@@ -1,5 +1,6 @@
 import http from 'http';
 import express from 'express';
+import os from 'os';
 import path from 'path';
 import { installNode12ColyseusCompat } from './node12Compat';
 
@@ -22,8 +23,8 @@ const { WebSocketTransport } = require('@colyseus/ws-transport') as typeof impor
 const { GameRoom } = require('./rooms/GameRoom') as typeof import('./rooms/GameRoom');
 
 const app = express();
-const PORT = 3000;
-const clientDistPath = path.join(__dirname, '../../../../dist/client');
+const PORT = Number(process.env.PORT) || 3000;
+const clientDistPath = path.resolve(__dirname, '../../../../dist/client');
 const server = http.createServer(app);
 const gameServer = new Server({
   transport: new WebSocketTransport({ server })
@@ -39,7 +40,31 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(clientDistPath, 'index.html'));
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
+  const lanAddress = getLanAddress();
+
   console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`LAN URL: http://${lanAddress}:${PORT}`);
   console.log('Colyseus room registered: game_room');
 });
+
+function getLanAddress(): string {
+  const interfaces = os.networkInterfaces();
+  const names = Object.keys(interfaces);
+
+  for (let i = 0; i < names.length; i++) {
+    const entries = interfaces[names[i]];
+    if (!entries) {
+      continue;
+    }
+
+    for (let j = 0; j < entries.length; j++) {
+      const entry = entries[j];
+      if (entry.family === 'IPv4' && !entry.internal) {
+        return entry.address;
+      }
+    }
+  }
+
+  return 'localhost';
+}

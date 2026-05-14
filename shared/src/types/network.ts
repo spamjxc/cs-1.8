@@ -2,6 +2,8 @@ import { TEAM } from '../constants';
 
 export type TeamId = typeof TEAM.RED | typeof TEAM.BLUE;
 export type WeaponId = 'fist' | 'pistol' | 'auto' | 'grenade' | 'rpg';
+export type MatchPhase = 'lobby' | 'fight' | 'pause';
+export type AdminCommandType = 'restart' | 'toggle_balance';
 
 export type InputCommand = {
   tick: number;
@@ -39,8 +41,24 @@ export type ShootEvent = {
   weapon: Exclude<WeaponId, 'fist'>;
 };
 
+export type StatsRow = {
+  id: string;
+  nick: string;
+  team: TeamId;
+  kills: number;
+  deaths: number;
+  kpd: number;
+};
+
+export type StatsPacket = {
+  redScore: number;
+  blueScore: number;
+  winner: TeamId | 'draw';
+  players: StatsRow[];
+};
+
 export type GameEventPayload = {
-  type: 'hit' | 'death' | 'respawn' | 'baseDamage' | 'explode' | 'pickup' | 'ammo';
+  type: 'hit' | 'death' | 'respawn' | 'baseDamage' | 'explode' | 'pickup' | 'ammo' | 'phase_change' | 'stats' | 'admin' | 'chat';
   targetId?: string;
   hp?: number;
   ghostTimer?: number;
@@ -52,4 +70,20 @@ export type GameEventPayload = {
   ownerId?: string;
   weapon?: WeaponId;
   ammo?: number;
+  phase?: MatchPhase;
+  timer?: number;
+  redScore?: number;
+  blueScore?: number;
+  winner?: TeamId | 'draw';
+  stats?: StatsPacket;
+  autoBalance?: boolean;
+  message?: string;
+};
+
+export type AdminAuthEvent = {
+  password: string;
+};
+
+export type AdminCommandEvent = {
+  type: AdminCommandType;
 };
