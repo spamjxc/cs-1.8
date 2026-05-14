@@ -10,6 +10,8 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
     "outDir": "./dist",
     "rootDir": "./",
     "resolveJsonModule": true,
