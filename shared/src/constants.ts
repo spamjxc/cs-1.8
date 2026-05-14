@@ -95,14 +95,14 @@ export const GAME_CONFIG = {
     DOUBLE_JUMP_FORCE: -800,
     RISE_GRAVITY_MULTIPLIER: 3.5,
     FALL_GRAVITY_MULTIPLIER: 4.0,
-    MAX_FALL_SPEED: 1100,
+    MAX_FALL_SPEED: 2000,
     CROUCH_HITBOX: { width: 24, height: 29, offsetX: 12, offsetY: 29 },
     CROUCH_VISUAL_SCALE_Y: 0.68,
     FRICTION: 1000,
     RUN_ANIMATION_FPS: 20
   },
   WEAPONS: {
-    FIST_DAMAGE: 10,
+    FIST_DAMAGE: 5,
     PICKUP_RADIUS: 72,
     MELEE_RANGE: 44,
     DEFAULT_PICKUPS: 8,
@@ -119,8 +119,8 @@ export const GAME_CONFIG = {
       STROKE_WIDTH: 1
     },
     EXPLOSION: {
-      GRENADE_RADIUS: 280,
-      RPG_RADIUS: 210,
+      GRENADE_RADIUS: 210,
+      RPG_RADIUS: 120,
       GRENADE_KNOCKBACK: 1520,
       RPG_KNOCKBACK: 1020
     },
@@ -137,7 +137,7 @@ export const GAME_CONFIG = {
         RUN: { x: 8, y: 0 },
         CROUCH: { x: 0, y: 8 },
         ORIGIN_X: 0.16,
-        DISPLAY_SCALE: 1.25
+        DISPLAY_SCALE: 1.35
       },
       GRENADE: {
         STAND: { x: 2, y: 4 },
@@ -156,9 +156,9 @@ export const GAME_CONFIG = {
     },
     GRENADE_THROW: {
       TRAJECTORY: 'arc',
-      MIN_THROW_FORCE: 360,
-      MAX_THROW_FORCE: 760,
-      CHARGE_TIME_MS: 900,
+      MIN_THROW_FORCE: 400,
+      MAX_THROW_FORCE: 1000,
+      CHARGE_TIME_MS: 1000,
       CHARGE_BAR: {
         WIDTH: 48,
         HEIGHT: 6,
@@ -170,9 +170,9 @@ export const GAME_CONFIG = {
     },
     DIRECT_PROJECTILE: {
       TRAJECTORY: 'straight',
-      PISTOL_BULLET_SPEED: 900,
-      AUTO_BULLET_SPEED: 820,
-      ROCKET_SPEED: 620,
+      PISTOL_BULLET_SPEED: 1500,
+      AUTO_BULLET_SPEED: 800,
+      ROCKET_SPEED: 400,
       AUTO_FIRE_RATE_PER_SEC: 8
     }
   },
@@ -201,10 +201,10 @@ export const GAME_CONFIG = {
     PANEL_BOTTOM_GAP_PX: 8
   },
   BASES: {
-    WIDTH: 390,
+    WIDTH: 1200,
     DAMAGE_WARNING_MIN_ALPHA: 0.12,
     DAMAGE_WARNING_MAX_ALPHA: 0.28,
-    DAMAGE_WARNING_BLINK_MS: 45
+    DAMAGE_WARNING_BLINK_MS: 20
   },
   VISUALS: {
     HELMET: {
@@ -241,7 +241,7 @@ export const GAME = {
   GHOST_TIME: 30,
   MATCH_DURATION: 600, // 10 minutes in seconds
   PICKUP_COOLDOWN: 300, // ms
-  BASE_DAMAGE_PER_SEC: 5
+  BASE_DAMAGE_PER_SEC: 20
 } as const;
 
 export const MATCH_PHASES = {
@@ -264,11 +264,11 @@ export const NETWORK = {
 } as const;
 
 export const MAP = {
-  WIDTH: 4096,
+  WIDTH: 5120,
   HEIGHT: 720,
   GROUND_Y: 600,
   RED_SPAWN_X: 140,
-  BLUE_SPAWN_X: 3956,
+  BLUE_SPAWN_X: 4980,
   BASE_WIDTH: GAME_CONFIG.BASES.WIDTH,
   TILE_SIZE: 64,
   DEFAULT_SEED: 180818,
@@ -291,10 +291,10 @@ export const MAP = {
  */
 export const WEAPONS = {
   FIST: { damage: GAME_CONFIG.WEAPONS.FIST_DAMAGE, ammo: Infinity, type: 'melee' },
-  PISTOL: { damage: 20, ammo: 50, type: 'projectile' },
-  AUTO: { damage: 20, ammo: 100, type: 'projectile' },
-  GRENADE: { damage: 80, ammo: 3, type: 'explosive' },
-  RPG: { damage: 40, ammo: 5, type: 'explosive' }
+  PISTOL: { damage: 10, ammo: 15, type: 'projectile' },
+  AUTO: { damage: 10, ammo: 30, type: 'projectile' },
+  GRENADE: { damage: 40, ammo: 3, type: 'explosive' },
+  RPG: { damage: 30, ammo: 5, type: 'explosive' }
 } as const;
 
 /**
