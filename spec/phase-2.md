@@ -51,23 +51,26 @@
   const isCrouching = this.keys.CROUCH.isDown;
   if (isCrouching !== this.player.getData('crouching')) {
     this.player.setData('crouching', isCrouching);
+    const bottomBefore = this.player.body.bottom;
     if (isCrouching) {
-      this.player.body.setSize(16, 24); // 50% от 32x48
-      this.player.setScaleY(0.7);
-      this.moveSpeed = PHYSICS.MOVE_SPEED / 2;
       this.player.setTexture('player_crouch');
+      this.player.body.setSize(GAME_CONFIG.PLAYER.CROUCH_HITBOX.width, GAME_CONFIG.PLAYER.CROUCH_HITBOX.height, false);
+      this.player.body.setOffset(GAME_CONFIG.PLAYER.CROUCH_HITBOX.offsetX, GAME_CONFIG.PLAYER.CROUCH_HITBOX.offsetY);
+      this.moveSpeed = GAME_CONFIG.PLAYER.MOVE_SPEED / 2;
     } else {
-      this.player.body.setSize(32, 48);
-      this.player.setScaleY(1);
-      this.moveSpeed = PHYSICS.MOVE_SPEED;
       this.player.setTexture('player_idle');
+      this.player.body.setSize(49, 58, false);
+      this.player.body.setOffset(0, 0);
+      this.moveSpeed = GAME_CONFIG.PLAYER.MOVE_SPEED;
     }
+    this.player.y += bottomBefore - this.player.body.bottom;
+    this.player.body.updateFromGameObject();
   }
   ```
 - Применять `moveSpeed` в логике движения из Задачи 5.
 
 **🏗 Архитектурный контекст:**  
-Изменение `body.setSize` динамически меняет коллайдер Arcade Physics. Визуальное сжатие (`setScaleY`) синхронизировано с физикой. Это критичный prerequisite для подбора оружия (будет в задаче 18).
+Изменение `body.setSize` динамически меняет коллайдер Arcade Physics. Важно не масштабировать сам physics sprite через `setScaleY()`: это может протолкнуть тело вниз через платформу. Присед делается отдельной текстурой, отдельным hitbox и сохранением нижней точки тела. Это критичный prerequisite для подбора оружия (будет в задаче 18).
 
 **✅ Результат / Как тестировать:**
 - Удержание `Ctrl` → спрайт сжимается, хитбокс уменьшается вдвое, скорость падает.
@@ -111,7 +114,7 @@ Phaser Arcade оптимизирован под AABB-коллизии. Вращ�
 ---
 
 ### 🔫 Задача 9: Локальная стрельба (клик) и пул снарядов
-**🎯 Цель:** Реализовать выстрел по ЛКМ без зажатия, спавн снаряда с `velocity=800`, автоматическое удаление за границами и object-pooling для стабильного FPS.
+**🎯 Цель:** Реализовать выстрел по ЛКМ без автоматической очереди, спавн прямых снарядов для пистолета/автомата/ракеты, дуговой бросок гранаты с удержанием силы и object-pooling для стабильного FPS.
 
 **🛠 Техническая реализация:**
 - В `GameScene.create()`:
@@ -143,12 +146,19 @@ Phaser Arcade оптимизирован под AABB-коллизии. Вращ�
   });
   ```
 - В `projectiles.update()`: проверка границ экрана → `setActive(false)`.
+- Для гранаты:
+  - `pointerdown` начинает набор силы броска;
+  - клиент рисует шкалу без ассета через `Phaser.GameObjects.Graphics`;
+  - шкала растёт от `MIN_THROW_FORCE` до `MAX_THROW_FORCE` за `CHARGE_TIME_MS`;
+  - `pointerup` бросает `grenade.png` по дуге: горизонтальная/вертикальная скорость рассчитываются из направления курсора и текущей силы, для тела гранаты включена гравитация;
+  - пуля/автомат/ракета остаются прямолинейными снарядами.
 
 **🏗 Архитектурный контекст:**  
 `Phaser.Group` с `maxSize` предотвращает GC-фризы. Снаряды не создаются/не уничтожаются динамически, а переиспользуются. Это прямое требование из `tech-2022.md` (раздел 7). Серверная валидация частоты кликов будет добавлена позже.
 
 **✅ Результат / Как тестировать:**
 - ЛКМ → спавн снаряда, полёт по прямой со скоростью ~800 px/s.
+- Граната при удержании ЛКМ показывает шкалу силы, а при отпускании летит по дуге.
 - Зажатие ЛКМ не вызывает автоматическую очередь.
 - Снаряды исчезают за границами или через 2 сек.
 - При интенсивной стрельбе FPS держится ≥60, нет просадок памяти.

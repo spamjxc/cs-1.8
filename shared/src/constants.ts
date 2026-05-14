@@ -22,7 +22,7 @@ export const ASSET_NAMES = {
   
   // Projectiles
   PROJ_BULLET: 'proj_bullet.png',
-  PROJ_GRENADE: 'proj_grenade.png',
+  PROJ_GRENADE: 'grenade.png',
   PROJ_ROCKET: 'proj_rocket.png',
   
   // Effects
@@ -39,18 +39,135 @@ export const ASSET_NAMES = {
 } as const;
 
 /**
+ * Pixel-size and rendering contract for game assets.
+ *
+ * These values are the source of truth for loaders, hitbox setup and future
+ * asset validation. Actual PNGs may contain transparent padding, but the
+ * visible art should fit these sizes to keep gameplay readable.
+ */
+export const ASSET_SPECS = {
+  PLAYER: {
+    IDLE: { width: 49, height: 58 },
+    RUN: { frameWidth: 49, frameHeight: 58, frames: 10 },
+    CROUCH: { width: 49, height: 58 },
+    DAMAGE: { width: 49, height: 58 },
+    GHOST: { width: 49, height: 58 }
+  },
+  HELMET: {
+    RED: { width: 24, height: 12 },
+    BLUE: { width: 24, height: 12 },
+    RUN_VERTICAL_BOB: true
+  },
+  WEAPON_PICKUP: {
+    PISTOL: { width: 30, height: 20 },
+    AUTO: { width: 40, height: 14 },
+    GRENADE: { width: 17, height: 21 },
+    RPG: { width: 48, height: 24 }
+  },
+  PROJECTILE: {
+    BULLET: { width: 12, height: 5, file: ASSET_NAMES.PROJ_BULLET },
+    GRENADE: { width: 17, height: 21, file: ASSET_NAMES.PROJ_GRENADE },
+    ROCKET: { width: 28, height: 15, file: ASSET_NAMES.PROJ_ROCKET }
+  },
+  EFFECT: {
+    EXPLOSION: {
+      width: 64,
+      height: 64,
+      file: ASSET_NAMES.EXPLOSION_01,
+      animation: 'scale-and-fade',
+      startScale: 0.4,
+      endScale: 2.2,
+      durationMs: 300
+    }
+  },
+  TILE: {
+    FLOOR: { width: 64, height: 64 },
+    WALL: { width: 64, height: 64 },
+    RAMP: { width: 64, height: 64, collision: 'visual-only-for-mvp' }
+  }
+} as const;
+
+/**
  * Tunable gameplay parameters.
  */
 export const GAME_CONFIG = {
   PLAYER: {
     MOVE_SPEED: 340,
-    JUMP_FORCE: -450,
-    DOUBLE_JUMP_FORCE: -400,
+    JUMP_FORCE: -1000,
+    DOUBLE_JUMP_FORCE: -800,
+    RISE_GRAVITY_MULTIPLIER: 3.5,
+    FALL_GRAVITY_MULTIPLIER: 4.0,
+    MAX_FALL_SPEED: 1100,
+    CROUCH_HITBOX: { width: 24, height: 29, offsetX: 12, offsetY: 29 },
+    CROUCH_VISUAL_SCALE_Y: 0.68,
     FRICTION: 1000,
     RUN_ANIMATION_FPS: 20
   },
+  WEAPONS: {
+    HAND_POSE: {
+      PISTOL: {
+        STAND: { x: 2, y: 0 },
+        RUN: { x: 10, y: 4 },
+        CROUCH: { x: 2, y: 8 },
+        ORIGIN_X: 0.18,
+        DISPLAY_SCALE: 1
+      },
+      AUTO: {
+        STAND: { x: 0, y: 0 },
+        RUN: { x: 8, y: 0 },
+        CROUCH: { x: 0, y: 8 },
+        ORIGIN_X: 0.16,
+        DISPLAY_SCALE: 1.25
+      },
+      GRENADE: {
+        STAND: { x: 2, y: 4 },
+        RUN: { x: 4, y: -4 },
+        CROUCH: { x: 2, y: 12 },
+        ORIGIN_X: 0.35,
+        DISPLAY_SCALE: 1
+      },
+      RPG: {
+        STAND: { x: 0, y: -4 },
+        RUN: { x: 8, y: 0 },
+        CROUCH: { x: 0, y: 4 },
+        ORIGIN_X: 0.2,
+        DISPLAY_SCALE: 1
+      }
+    },
+    GRENADE_THROW: {
+      TRAJECTORY: 'arc',
+      MIN_THROW_FORCE: 360,
+      MAX_THROW_FORCE: 760,
+      CHARGE_TIME_MS: 900,
+      CHARGE_BAR: {
+        WIDTH: 48,
+        HEIGHT: 6,
+        OFFSET_Y: -42,
+        BACKGROUND_COLOR: 0x1b1f1c,
+        FILL_COLOR: 0x9bdc4a,
+        BORDER_COLOR: 0xe8f3d0
+      }
+    },
+    DIRECT_PROJECTILE: {
+      TRAJECTORY: 'straight',
+      BULLET_SPEED: 900,
+      ROCKET_SPEED: 620
+    }
+  },
   WORLD: {
     GRAVITY: 1000
+  },
+  VISUALS: {
+    HELMET: {
+      STAND: { x: -3, y: -24 },
+      STAND_LEFT_CORRECTION_X: 0,
+      RUN: { x: 10, y: -24 },
+      RUN_LEFT_CORRECTION_X: 0,
+      CROUCH: { x: -3, y: -10 },
+      CROUCH_LEFT_CORRECTION_X: 0,
+      RUN_FRAME_BOB_Y: [3, 1, 0, 1, 1, 3, 1, 0, 1, 1],
+      NAME_OFFSET_Y: -24
+    }
   }
 } as const;
 
