@@ -3,6 +3,7 @@ import express from 'express';
 import os from 'os';
 import path from 'path';
 import { installNode12ColyseusCompat } from './node12Compat';
+import { getRuntimeConfigPath, loadRuntimeConfig } from './runtimeConfig';
 
 installNode12ColyseusCompat();
 
@@ -23,7 +24,9 @@ const { WebSocketTransport } = require('@colyseus/ws-transport') as typeof impor
 const { GameRoom } = require('./rooms/GameRoom') as typeof import('./rooms/GameRoom');
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const runtimeConfig = loadRuntimeConfig();
+const PORT = Number(process.env.PORT) || runtimeConfig.server.port;
+const HOST = process.env.HOST || runtimeConfig.server.host;
 const clientDistPath = path.resolve(__dirname, '../../../../dist/client');
 const server = http.createServer(app);
 const gameServer = new Server({
@@ -31,6 +34,21 @@ const gameServer = new Server({
 });
 
 gameServer.define('game_room', GameRoom);
+
+app.get('/runtime-config.json', (req, res) => {
+  const websocketHost = runtimeConfig.websocket.host === 'auto'
+    ? req.hostname
+    : runtimeConfig.websocket.host;
+
+  res.json({
+    websocket: {
+      protocol: runtimeConfig.websocket.protocol,
+      host: websocketHost,
+      port: runtimeConfig.websocket.port,
+      path: runtimeConfig.websocket.path
+    }
+  });
+});
 
 // Serve static files from dist/client
 app.use(express.static(clientDistPath));
@@ -40,10 +58,12 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(clientDistPath, 'index.html'));
 });
 
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, HOST, () => {
   const lanAddress = getLanAddress();
 
   console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Bind address: ${HOST}:${PORT}`);
+  console.log(`Runtime config: ${getRuntimeConfigPath()}`);
   console.log(`LAN URL: http://${lanAddress}:${PORT}`);
   console.log('Colyseus room registered: game_room');
 });

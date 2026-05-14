@@ -103,7 +103,7 @@ export default class LobbyScene extends Phaser.Scene {
     this.playButton?.disableInteractive().setAlpha(0.6);
 
     try {
-      const client = new Client(this.getWsEndpoint());
+      const client = new Client(await this.getWsEndpoint());
       const room = await client.joinOrCreate('game_room', {
         nick,
         team: this.selectedTeam
@@ -138,8 +138,31 @@ export default class LobbyScene extends Phaser.Scene {
     this.scene.start('GameScene', data);
   }
 
-  private getWsEndpoint(): string {
+  private async getWsEndpoint(): Promise<string> {
     const host = window.location.hostname || 'localhost';
-    return `ws://${host}:3000`;
+    const fallbackPort = window.location.port || '3000';
+
+    try {
+      const response = await fetch('/runtime-config.json', {
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        throw new Error(`Runtime config HTTP ${response.status}`);
+      }
+
+      const config = await response.json();
+      const websocket = config && config.websocket ? config.websocket : {};
+      const protocol = websocket.protocol === 'wss' ? 'wss' : 'ws';
+      const wsHost = typeof websocket.host === 'string' && websocket.host && websocket.host !== 'auto'
+        ? websocket.host
+        : host;
+      const wsPort = Number(websocket.port) > 0 ? Number(websocket.port) : Number(fallbackPort);
+      const path = typeof websocket.path === 'string' ? websocket.path : '';
+
+      return `${protocol}://${wsHost}:${wsPort}${path}`;
+    } catch (error) {
+      console.warn('Runtime config unavailable, using current page host.', error);
+      return `ws://${host}:${fallbackPort}`;
+    }
   }
 }
