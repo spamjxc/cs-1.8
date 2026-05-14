@@ -93,6 +93,7 @@ export const ASSET_SPECS = {
 export const GAME_CONFIG = {
   PLAYER: {
     MOVE_SPEED: 340,
+    GHOST_MOVE_SPEED: 420,
     JUMP_FORCE: -1000,
     DOUBLE_JUMP_FORCE: -800,
     RISE_GRAVITY_MULTIPLIER: 3.5,
@@ -150,12 +151,20 @@ export const GAME_CONFIG = {
     },
     DIRECT_PROJECTILE: {
       TRAJECTORY: 'straight',
-      BULLET_SPEED: 900,
-      ROCKET_SPEED: 620
+      PISTOL_BULLET_SPEED: 900,
+      AUTO_BULLET_SPEED: 820,
+      ROCKET_SPEED: 620,
+      AUTO_FIRE_RATE_PER_SEC: 8
     }
   },
   WORLD: {
     GRAVITY: 1000
+  },
+  BASES: {
+    WIDTH: 260,
+    DAMAGE_WARNING_MIN_ALPHA: 0.12,
+    DAMAGE_WARNING_MAX_ALPHA: 0.28,
+    DAMAGE_WARNING_BLINK_MS: 45
   },
   VISUALS: {
     HELMET: {
@@ -193,6 +202,25 @@ export const GAME = {
   MATCH_DURATION: 600, // 10 minutes in seconds
   PICKUP_COOLDOWN: 300, // ms
   BASE_DAMAGE_PER_SEC: 5
+} as const;
+
+export const NETWORK = {
+  TICK_RATE: 20,
+  TICK_MS: 50,
+  MAX_INPUTS_PER_SEC: 20,
+  HIT_RATE_LIMIT_MS: 80,
+  MAX_HIT_DISTANCE: 96,
+  DRIFT_CORRECTION_THRESHOLD: 3,
+  DRIFT_CORRECTION_ALPHA: 0.28
+} as const;
+
+export const MAP = {
+  WIDTH: 2560,
+  HEIGHT: 720,
+  GROUND_Y: 600,
+  RED_SPAWN_X: 140,
+  BLUE_SPAWN_X: 2420,
+  BASE_WIDTH: GAME_CONFIG.BASES.WIDTH
 } as const;
 
 /**

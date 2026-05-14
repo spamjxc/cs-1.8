@@ -5,13 +5,25 @@ import { installNode12ColyseusCompat } from './node12Compat';
 
 installNode12ColyseusCompat();
 
+const Module = require('module') as {
+  _resolveFilename: (request: string, parent: unknown, isMain: boolean, options?: unknown) => string;
+};
+const resolveFilename = Module._resolveFilename;
+Module._resolveFilename = function resolveSharedAlias(request: string, parent: unknown, isMain: boolean, options?: unknown): string {
+  if (request.indexOf('@shared/') === 0) {
+    return resolveFilename.call(this, path.join(__dirname, '../../shared/src', request.slice('@shared/'.length)), parent, isMain, options);
+  }
+
+  return resolveFilename.call(this, request, parent, isMain, options);
+};
+
 const { Server } = require('@colyseus/core') as typeof import('@colyseus/core');
 const { WebSocketTransport } = require('@colyseus/ws-transport') as typeof import('@colyseus/ws-transport');
 const { GameRoom } = require('./rooms/GameRoom') as typeof import('./rooms/GameRoom');
 
 const app = express();
 const PORT = 3000;
-const clientDistPath = path.join(__dirname, '../../dist/client');
+const clientDistPath = path.join(__dirname, '../../../../dist/client');
 const server = http.createServer(app);
 const gameServer = new Server({
   transport: new WebSocketTransport({ server })

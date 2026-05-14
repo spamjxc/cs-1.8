@@ -11,10 +11,10 @@
   "scripts": {
     "build:shared": "tsc -p shared/tsconfig.json",
     "dev:client": "vite --config client/vite.config.ts",
-    "dev:server": "tsc-watch -p server/tsconfig.json --onSuccess \"node server/dist/index.js\"",
+    "dev:server": "tsc-watch -p server/tsconfig.json --onSuccess \"node server/dist/server/src/index.js\"",
     "dev": "npm run build:shared && concurrently \"npm run dev:client\" \"npm run dev:server\"",
     "build": "npm run build:shared && vite build --config client/vite.config.ts && tsc -p server/tsconfig.json",
-    "start": "node server/dist/index.js",
+    "start": "node server/dist/server/src/index.js",
     "typecheck": "tsc -p shared/tsconfig.json --noEmit && tsc -p client/tsconfig.json --noEmit && tsc -p server/tsconfig.json --noEmit"
   },
   "dependencies": {

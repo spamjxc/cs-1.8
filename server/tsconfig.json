@@ -5,10 +5,14 @@
     "module": "CommonJS",
     "lib": ["ES2019"],
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "../",
     "declaration": true,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "baseUrl": "..",
+    "paths": {
+      "@shared/*": ["shared/src/*"]
+    }
   },
-  "include": ["./src/**/*"],
+  "include": ["./src/**/*", "../shared/src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
