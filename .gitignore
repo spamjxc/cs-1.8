@@ -67,3 +67,6 @@ Thumbs.db
 *.tar.bz2
 *.tar.xz
 *.tar.zst
+
+node/astra/
+node/win7/
