@@ -1,6 +1,6 @@
 import { Room } from 'colyseus.js';
 import { NETWORK } from '@shared/constants';
-import { ExplosionEvent, GameEventPayload, InputCommand, PickupEvent, ShootEvent } from '@shared/types/network';
+import { AdminCommandEvent, ExplosionEvent, GameEventPayload, InputCommand, PickupEvent, ShootEvent } from '@shared/types/network';
 
 type PlayerCallback = (player: any, id: string) => void;
 type EventCallback = (event: GameEventPayload) => void;
@@ -62,6 +62,14 @@ export class NetworkManager {
 
   sendShot(payload: ShootEvent): void {
     this.room.send('shoot', payload);
+  }
+
+  sendAdminAuth(password: string): void {
+    this.room.send('admin_auth', { password });
+  }
+
+  sendAdminCommand(payload: AdminCommandEvent): void {
+    this.room.send('admin_cmd', payload);
   }
 
   onPlayer(callback: PlayerCallback): void {

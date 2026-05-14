@@ -18,4 +18,6 @@ export class PlayerSchema extends Schema {
   @type('string') weapon: string = 'pistol';
   @type('number') ammo: number = 50;
   @type('number') aimAngle: number = 0;
+  @type('number') kills: number = 0;
+  @type('number') deaths: number = 0;
 }

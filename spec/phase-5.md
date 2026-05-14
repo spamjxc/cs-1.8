@@ -4,12 +4,12 @@
 ---
 
 ### 🔍 Задача 21: Зум камеры и ограничение FOV
-**🎯 Цель:** Довести камеру до спеки: `zoom=1.8`, `deadzone`, плавное следование, строгие границы карты. Обеспечить тактическую неизвестность без тумана/масок.
+**🎯 Цель:** Довести камеру до спеки: `zoom=1.1`, `deadzone`, плавное следование, строгие границы карты. Обеспечить тактическую неизвестность без тумана/масок.
 
 **🛠 Техническая реализация:**
 - В `CameraController.ts` (вызывается после генерации карты):
   ```ts
-  this.cameras.main.setZoom(1.8);
+  this.cameras.main.setZoom(1.1);
   this.cameras.main.setDeadzone(200, 150);
   this.cameras.main.startFollow(player, true, 0.1, 0.1);
   this.cameras.main.setBounds(0, 0, mapWidth, mapHeight);

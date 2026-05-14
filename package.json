@@ -10,11 +10,15 @@
   },
   "scripts": {
     "build:shared": "tsc -p shared/tsconfig.json",
+    "build:client": "vite build --config client/vite.config.ts",
+    "build:server": "tsc -p server/tsconfig.json",
+    "clean:dist": "node scripts/clean-dist.js",
+    "write:launchers": "node scripts/write-dist-launchers.js",
     "dev:client": "vite --config client/vite.config.ts",
-    "dev:server": "tsc-watch -p server/tsconfig.json --onSuccess \"node server/dist/server/src/index.js\"",
+    "dev:server": "tsc-watch -p server/tsconfig.json --onSuccess \"node dist/server/server/src/index.js\"",
     "dev": "npm run build:shared && concurrently \"npm run dev:client\" \"npm run dev:server\"",
-    "build": "npm run build:shared && vite build --config client/vite.config.ts && tsc -p server/tsconfig.json",
-    "start": "node server/dist/server/src/index.js",
+    "build": "npm run clean:dist && npm run build:shared && npm run build:client && npm run build:server && npm run write:launchers",
+    "start": "node dist/server/server/src/index.js",
     "typecheck": "tsc -p shared/tsconfig.json --noEmit && tsc -p client/tsconfig.json --noEmit && tsc -p server/tsconfig.json --noEmit",
     "test:map": "node tests/map-generator-invariants.js"
   },

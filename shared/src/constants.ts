@@ -228,6 +228,15 @@ export const GAME = {
   BASE_DAMAGE_PER_SEC: 5
 } as const;
 
+export const MATCH_PHASES = {
+  FIGHT_DURATION_SECONDS: 5 * 60,
+  PAUSE_DURATION_SECONDS: 30
+} as const;
+
+export const ADMIN_CONFIG = {
+  PASSWORD: 'zxczxc'
+} as const;
+
 export const NETWORK = {
   TICK_RATE: 20,
   TICK_MS: 50,

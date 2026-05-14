@@ -1,9 +1,9 @@
 import { Client, Room } from '@colyseus/core';
-import { GAME, GAME_CONFIG, MAP, NETWORK, TEAM, WEAPONS } from '@shared/constants';
+import { ADMIN_CONFIG, GAME, GAME_CONFIG, MAP, MATCH_PHASES, NETWORK, TEAM, WEAPONS } from '@shared/constants';
 import { PlayerSchema } from '@shared/schemas/PlayerSchema';
 import { RoomState } from '@shared/schemas/RoomState';
 import { WeaponPickupSchema } from '@shared/schemas/WeaponPickupSchema';
-import { ExplosionEvent, GameEventPayload, HitEvent, InputCommand, PickupEvent, ShootEvent, TeamId, WeaponId } from '@shared/types/network';
+import { AdminAuthEvent, AdminCommandEvent, ExplosionEvent, GameEventPayload, HitEvent, InputCommand, MatchPhase, PickupEvent, ShootEvent, StatsPacket, TeamId, WeaponId } from '@shared/types/network';
 import { getPickupY, getPlayerSpawnY } from '@shared/utils/MapGeometry';
 
 type JoinOptions = {
@@ -25,6 +25,7 @@ type PlayerRuntime = {
   baseDamageAccumulator: number;
   ignoreInputUntil: number;
   pickedDuringCurrentCrouch: boolean;
+  lastDamageSourceId?: string;
 };
 
 const VALID_TEAMS: TeamId[] = [TEAM.RED, TEAM.BLUE];
@@ -32,6 +33,8 @@ const VALID_TEAMS: TeamId[] = [TEAM.RED, TEAM.BLUE];
 export class GameRoom extends Room<RoomState> {
   maxClients = 20;
   private readonly runtime = new Map<string, PlayerRuntime>();
+  private readonly admins = new Set<string>();
+  private phaseSecondAccumulator = 0;
 
   onCreate(): void {
     this.setState(new RoomState());
@@ -43,12 +46,15 @@ export class GameRoom extends Room<RoomState> {
     this.onMessage('shoot', (client, data: ShootEvent) => this.handleShoot(client, data));
     this.onMessage('explode', (client, data: ExplosionEvent) => this.handleExplosion(client, data));
     this.onMessage('pickup', (client, data: PickupEvent) => this.handlePickup(client, data));
+    this.onMessage('admin_auth', (client, data: AdminAuthEvent) => this.handleAdminAuth(client, data));
+    this.onMessage('admin_cmd', (client, data: AdminCommandEvent) => this.handleAdminCommand(client, data));
     console.log('GameRoom created');
   }
 
   onJoin(client: Client, options: JoinOptions): void {
     const nick = this.sanitizeNick(options.nick);
-    const team = VALID_TEAMS.indexOf(options.team as TeamId) >= 0 ? (options.team as TeamId) : TEAM.RED;
+    const requestedTeam = VALID_TEAMS.indexOf(options.team as TeamId) >= 0 ? (options.team as TeamId) : TEAM.RED;
+    const team = this.state.autoBalance ? this.getBalancedTeam(requestedTeam) : requestedTeam;
     const player = new PlayerSchema();
 
     player.id = client.sessionId;
@@ -69,20 +75,31 @@ export class GameRoom extends Room<RoomState> {
       },
       baseDamageAccumulator: 0,
       ignoreInputUntil: 0,
-      pickedDuringCurrentCrouch: false
+      pickedDuringCurrentCrouch: false,
+      lastDamageSourceId: undefined
     });
 
     console.log(`Player joined: ${nick} (${team}) [${client.sessionId}]`);
+    this.broadcastEvent({ type: 'chat', message: `${nick} joined ${team}` });
+    if (this.state.phase === 'lobby') {
+      this.startFight(false);
+    }
   }
 
   onLeave(client: Client): void {
     this.state.players.delete(client.sessionId);
     this.runtime.delete(client.sessionId);
+    this.admins.delete(client.sessionId);
     console.log(`Player left: ${client.sessionId}`);
   }
 
   private tick(): void {
     this.state.serverTick++;
+    this.updateMatchTimer();
+
+    if (this.state.phase !== 'fight') {
+      return;
+    }
 
     this.state.players.forEach((player) => {
       if (player.ghost) {
@@ -98,7 +115,7 @@ export class GameRoom extends Room<RoomState> {
     const player = this.state.players.get(client.sessionId);
     const runtime = this.runtime.get(client.sessionId);
 
-    if (!player || !runtime || Date.now() < runtime.ignoreInputUntil || !this.acceptInput(runtime)) {
+    if (!player || !runtime || this.state.phase !== 'fight' || Date.now() < runtime.ignoreInputUntil || !this.acceptInput(runtime)) {
       return;
     }
 
@@ -120,7 +137,7 @@ export class GameRoom extends Room<RoomState> {
     const runtime = this.runtime.get(client.sessionId);
     const now = Date.now();
 
-    if (!attacker || !target || !runtime || target.ghost || attacker.ghost || !this.isValidHitPayload(data)) {
+    if (!attacker || !target || !runtime || this.state.phase !== 'fight' || target.ghost || attacker.ghost || !this.isValidHitPayload(data)) {
       return;
     }
 
@@ -134,13 +151,17 @@ export class GameRoom extends Room<RoomState> {
     }
 
     runtime.lastHitAt = now;
+    const targetRuntime = this.runtime.get(target.id);
+    if (targetRuntime) {
+      targetRuntime.lastDamageSourceId = attacker.id;
+    }
     target.hp = Math.max(0, target.hp - this.normalizeDamage(data.damage));
     console.log(`Hit validated: ${client.sessionId} -> ${data.targetId}`);
     console.log(`Damage applied: ${target.hp} HP left`);
     this.broadcastEvent({ type: 'hit', targetId: target.id, hp: target.hp });
 
     if (target.hp <= 0) {
-      this.kill(target);
+      this.kill(target, attacker.id);
     }
   }
 
@@ -149,7 +170,7 @@ export class GameRoom extends Room<RoomState> {
     const runtime = this.runtime.get(client.sessionId);
     const now = Date.now();
 
-    if (!player || !runtime || player.ghost || !this.isShootWeapon(data.weapon)) {
+    if (!player || !runtime || this.state.phase !== 'fight' || player.ghost || !this.isShootWeapon(data.weapon)) {
       return;
     }
 
@@ -169,7 +190,7 @@ export class GameRoom extends Room<RoomState> {
     const runtime = this.runtime.get(client.sessionId);
     const now = Date.now();
 
-    if (!owner || !runtime || (data.weapon !== 'grenade' && data.weapon !== 'rpg')) {
+    if (!owner || !runtime || this.state.phase !== 'fight' || (data.weapon !== 'grenade' && data.weapon !== 'rpg')) {
       return;
     }
 
@@ -193,9 +214,13 @@ export class GameRoom extends Room<RoomState> {
       const distance = Math.hypot(player.x - x, player.y - y);
       if (distance <= radius) {
         player.hp = Math.max(0, player.hp - damage);
+        const playerRuntime = this.runtime.get(player.id);
+        if (playerRuntime) {
+          playerRuntime.lastDamageSourceId = owner.id;
+        }
         this.broadcastEvent({ type: 'hit', targetId: player.id, hp: player.hp });
         if (player.hp <= 0) {
-          this.kill(player);
+          this.kill(player, owner.id);
         }
       }
     });
@@ -219,7 +244,7 @@ export class GameRoom extends Room<RoomState> {
       : undefined;
     const now = Date.now();
 
-    if (!player || !runtime || !pickup || player.ghost || runtime.pickedDuringCurrentCrouch) {
+    if (!player || !runtime || !pickup || this.state.phase !== 'fight' || player.ghost || runtime.pickedDuringCurrentCrouch) {
       return;
     }
 
@@ -266,14 +291,7 @@ export class GameRoom extends Room<RoomState> {
       if (runtime) {
         runtime.ignoreInputUntil = Date.now() + 200;
       }
-      this.broadcastEvent({
-        type: 'respawn',
-        targetId: player.id,
-        hp: player.hp,
-        ghostTimer: player.ghostTimer,
-        x: player.x,
-        y: player.y
-      });
+      this.broadcastRespawn(player);
     }
   }
 
@@ -301,11 +319,16 @@ export class GameRoom extends Room<RoomState> {
     }
 
     if (player.hp <= 0) {
-      this.kill(player);
+      this.kill(player, undefined, 'environment');
     }
   }
 
-  private kill(player: PlayerSchema): void {
+  private kill(player: PlayerSchema, attackerId?: string, cause: 'player' | 'environment' = 'player'): void {
+    if (player.ghost) {
+      return;
+    }
+
+    this.recordDeath(player, attackerId, cause);
     player.hp = 0;
     player.ghost = true;
     player.ghostTimer = GAME.GHOST_TIME;
@@ -325,12 +348,213 @@ export class GameRoom extends Room<RoomState> {
     player.y = getPlayerSpawnY(this.state.mapSeed, player.x);
     player.vx = 0;
     player.vy = 0;
+    player.lastInputTick = 0;
+    player.aimAngle = 0;
     player.hp = GAME.MAX_HP;
     player.ghost = false;
     player.ghostTimer = 0;
     player.crouch = false;
     player.weapon = 'pistol';
     player.ammo = WEAPONS.PISTOL.ammo;
+    const runtime = this.runtime.get(player.id);
+    if (runtime) {
+      runtime.lastDamageSourceId = undefined;
+      runtime.baseDamageAccumulator = 0;
+      runtime.pendingExplosives.grenade = 0;
+      runtime.pendingExplosives.rpg = 0;
+      runtime.pickedDuringCurrentCrouch = false;
+    }
+  }
+
+  private updateMatchTimer(): void {
+    if (this.state.phase === 'lobby') {
+      return;
+    }
+
+    this.phaseSecondAccumulator += NETWORK.TICK_MS;
+    if (this.phaseSecondAccumulator < 1000) {
+      return;
+    }
+
+    this.phaseSecondAccumulator -= 1000;
+    this.state.phaseTimer = Math.max(0, this.state.phaseTimer - 1);
+
+    if (this.state.phase === 'fight' && this.state.phaseTimer <= 0) {
+      this.startPause();
+    } else if (this.state.phase === 'pause' && this.state.phaseTimer <= 0) {
+      this.startFight(true);
+    }
+  }
+
+  private startFight(resetMatch: boolean): void {
+    if (resetMatch) {
+      this.resetMatchState();
+    }
+
+    this.state.phase = 'fight';
+    this.state.phaseTimer = MATCH_PHASES.FIGHT_DURATION_SECONDS;
+    this.phaseSecondAccumulator = 0;
+    this.broadcastEvent({
+      type: 'phase_change',
+      phase: 'fight',
+      timer: this.state.phaseTimer,
+      redScore: this.state.redScore,
+      blueScore: this.state.blueScore
+    });
+  }
+
+  private startPause(): void {
+    const stats = this.createStatsPacket();
+    this.state.phase = 'pause';
+    this.state.phaseTimer = MATCH_PHASES.PAUSE_DURATION_SECONDS;
+    this.phaseSecondAccumulator = 0;
+    this.broadcastEvent({
+      type: 'phase_change',
+      phase: 'pause',
+      timer: this.state.phaseTimer,
+      redScore: this.state.redScore,
+      blueScore: this.state.blueScore,
+      winner: stats.winner,
+      stats
+    });
+    this.broadcastEvent({ type: 'stats', stats });
+  }
+
+  private resetMatchState(): void {
+    this.state.mapSeed = Date.now() % 1000000;
+    this.state.redScore = 0;
+    this.state.blueScore = 0;
+    this.state.pickups.clear();
+    this.createInitialPickups();
+    this.state.players.forEach((player) => {
+      player.kills = 0;
+      player.deaths = 0;
+      this.spawnAtBase(player);
+      this.broadcastRespawn(player);
+    });
+  }
+
+  private broadcastRespawn(player: PlayerSchema): void {
+    this.broadcastEvent({
+      type: 'respawn',
+      targetId: player.id,
+      hp: player.hp,
+      ghostTimer: player.ghostTimer,
+      x: player.x,
+      y: player.y,
+      weapon: player.weapon as WeaponId,
+      ammo: player.ammo
+    });
+  }
+
+  private recordDeath(victim: PlayerSchema, attackerId?: string, cause: 'player' | 'environment' = 'player'): void {
+    victim.deaths++;
+    const victimRuntime = this.runtime.get(victim.id);
+    const creditedAttackerId = attackerId || (cause === 'environment' ? victimRuntime?.lastDamageSourceId : undefined);
+    const attacker = creditedAttackerId ? this.state.players.get(creditedAttackerId) : undefined;
+
+    if (attacker && attacker.team !== victim.team && !attacker.ghost) {
+      attacker.kills++;
+      this.addTeamScore(attacker.team);
+    } else if (cause === 'environment') {
+      this.addTeamScore(victim.team === TEAM.RED ? TEAM.BLUE : TEAM.RED);
+    }
+
+    this.broadcastEvent({
+      type: 'stats',
+      redScore: this.state.redScore,
+      blueScore: this.state.blueScore,
+      stats: this.createStatsPacket()
+    });
+  }
+
+  private addTeamScore(team: TeamId): void {
+    if (team === TEAM.RED) {
+      this.state.redScore++;
+    } else {
+      this.state.blueScore++;
+    }
+  }
+
+  private createStatsPacket(): StatsPacket {
+    const players = Array.from(this.state.players.values()).map((player) => ({
+      id: player.id,
+      nick: player.nick,
+      team: player.team as TeamId,
+      kills: player.kills,
+      deaths: player.deaths,
+      kpd: player.kills - player.deaths
+    })).sort((a, b) => b.kpd - a.kpd || b.kills - a.kills || a.deaths - b.deaths);
+    const winner = this.state.redScore === this.state.blueScore
+      ? 'draw'
+      : this.state.redScore > this.state.blueScore ? TEAM.RED : TEAM.BLUE;
+
+    return {
+      redScore: this.state.redScore,
+      blueScore: this.state.blueScore,
+      winner,
+      players
+    };
+  }
+
+  private handleAdminAuth(client: Client, data: AdminAuthEvent): void {
+    const password = data && typeof data.password === 'string' ? data.password : '';
+    if (password !== ADMIN_CONFIG.PASSWORD) {
+      this.broadcastEvent({ type: 'admin', targetId: client.sessionId, message: 'auth_failed' });
+      return;
+    }
+
+    this.admins.add(client.sessionId);
+    this.broadcastEvent({
+      type: 'admin',
+      targetId: client.sessionId,
+      message: 'granted',
+      autoBalance: this.state.autoBalance
+    });
+  }
+
+  private handleAdminCommand(client: Client, data: AdminCommandEvent): void {
+    if (!this.admins.has(client.sessionId) || !data) {
+      return;
+    }
+
+    const player = this.state.players.get(client.sessionId);
+    const nick = player ? player.nick : client.sessionId;
+    if (data.type === 'restart') {
+      this.startFight(true);
+      this.broadcastEvent({ type: 'chat', message: `[ADMIN] Match restarted by ${nick}` });
+    } else if (data.type === 'toggle_balance') {
+      this.state.autoBalance = !this.state.autoBalance;
+      this.broadcastEvent({
+        type: 'admin',
+        message: 'balance_toggled',
+        autoBalance: this.state.autoBalance
+      });
+      this.broadcastEvent({ type: 'chat', message: `[ADMIN] Auto balance ${this.state.autoBalance ? 'enabled' : 'disabled'} by ${nick}` });
+    }
+  }
+
+  private getBalancedTeam(requestedTeam: TeamId): TeamId {
+    const redCount = this.countTeam(TEAM.RED);
+    const blueCount = this.countTeam(TEAM.BLUE);
+    const requestedRedCount = redCount + (requestedTeam === TEAM.RED ? 1 : 0);
+    const requestedBlueCount = blueCount + (requestedTeam === TEAM.BLUE ? 1 : 0);
+
+    if (Math.abs(requestedRedCount - requestedBlueCount) <= 1) {
+      return requestedTeam;
+    }
+
+    return redCount > blueCount ? TEAM.BLUE : TEAM.RED;
+  }
+
+  private countTeam(team: TeamId): number {
+    let count = 0;
+    this.state.players.forEach((player) => {
+      if (player.team === team) {
+        count++;
+      }
+    });
+    return count;
   }
 
   private isInEnemyBase(player: PlayerSchema): boolean {
