@@ -30,8 +30,8 @@ fs.mkdirSync(distPath, { recursive: true });
 fs.mkdirSync(distScriptsPath, { recursive: true });
 
 writeConfigTemplate();
-copyRuntimeDirectory('node');
-copyRuntimeDirectory('node_modules');
+// copyRuntimeDirectory('node');
+// copyRuntimeDirectory('node_modules');
 writeNodeCommandBridges();
 removeOldClientLaunchers();
 writeLauncherScripts();
