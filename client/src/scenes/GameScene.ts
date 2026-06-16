@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import type { Room } from 'colyseus.js';
-import { ASSET_NAMES, ASSET_SPECS, GAME, GAME_CONFIG, MAP, TEAM, WEAPONS } from '@shared/constants';
+import { ASSET_NAMES, ASSET_SPECS, GAME, GAME_CONFIG, MAP, TEAM, Theme, THEME, WEAPONS } from '@shared/constants';
 import { MapBuilder } from '@client/entities/MapBuilder';
 import { getPlayerSpawnY } from '@shared/utils/MapGeometry';
 import { GameSceneData } from '@client/scenes/LobbyScene';
@@ -65,6 +65,7 @@ export default class GameScene extends GameSceneProjectiles {
   private pendingAdminButton?: HTMLButtonElement;
   private lastStats?: StatsPacket;
   private currentMapSeed: number = MAP.DEFAULT_SEED;
+  private currentTheme: Theme = THEME.CAVE;
   private readonly chatMessages: string[] = [];
   private readonly windowMouseDownHandler = (event: MouseEvent): void => this.handleWindowMouseDown(event);
   private readonly windowMouseUpHandler = (event: MouseEvent): void => this.handleWindowMouseUp(event);
@@ -103,8 +104,12 @@ export default class GameScene extends GameSceneProjectiles {
 
   preload(): void {
     // Load tile assets
-    this.load.image(SPRITE_KEYS.FLOOR, `assets/${ASSET_NAMES.TILE_FLOOR}`);
-    this.load.image(SPRITE_KEYS.BOX, `assets/${ASSET_NAMES.TILE_WALL}`);
+    Object.values(THEME).map((theme) => ({ theme, themePath: `assets/theme/${theme}` })).forEach(({ theme, themePath}) => {
+      this.load.image(`theme.${theme}.floor`, `${themePath}/${ASSET_NAMES.TILE_FLOOR}`);
+      this.load.image(`theme.${theme}.box`, `${themePath}/${ASSET_NAMES.TILE_WALL}`);
+      this.load.image(`theme.${theme}.ceil`, `${themePath}/${ASSET_NAMES.TILE_CEIL}`);
+      this.load.image(`theme.${theme}.bound`, `${themePath}/${ASSET_NAMES.TILE_BOUND}`);
+    });
     
     // Load player sprites
     this.load.image(SPRITE_KEYS.PLAYER_IDLE, `assets/${ASSET_NAMES.PLAYER_IDLE}`);
@@ -142,9 +147,15 @@ export default class GameScene extends GameSceneProjectiles {
 
     this.groundGroup = this.physics.add.staticGroup();
     this.currentMapSeed = this.getMapSeed();
+    this.currentTheme = this.getMapTheme();
+
+    this.setThemeBackground(this.currentTheme);
+
     new MapBuilder(this.groundGroup, {
-      floor: SPRITE_KEYS.FLOOR,
-      box: SPRITE_KEYS.BOX
+      floor: `theme.${this.currentTheme}.floor`,
+      box: `theme.${this.currentTheme}.box`,
+      ceil: `theme.${this.currentTheme}.ceil`,
+      bound: `theme.${this.currentTheme}.bound`,
     }).build(this.currentMapSeed);
     
     // Create player sprite

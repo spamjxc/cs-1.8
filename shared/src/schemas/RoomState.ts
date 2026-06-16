@@ -8,6 +8,7 @@ export class RoomState extends Schema {
   @type({ map: WeaponPickupSchema }) pickups = new MapSchema<WeaponPickupSchema>();
   @type('number') serverTick: number = 0;
   @type('number') mapSeed: number = MAP.DEFAULT_SEED;
+  @type('string') mapTheme: string = MAP.DEFAULT_THEME;
   @type('number') mapWidth: number = MAP.WIDTH;
   @type('number') mapHeight: number = MAP.HEIGHT;
   @type('string') phase: string = 'lobby';

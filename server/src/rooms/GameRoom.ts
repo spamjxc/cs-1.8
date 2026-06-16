@@ -1,5 +1,5 @@
 import { Client, Room } from '@colyseus/core';
-import { GAME, GAME_CONFIG, MAP, NETWORK, TEAM, WEAPONS } from '@shared/constants';
+import { GAME, GAME_CONFIG, MAP, NETWORK, TEAM, THEME_LIST, WEAPONS } from '@shared/constants';
 import { PlayerSchema } from '@shared/schemas/PlayerSchema';
 import { RoomState } from '@shared/schemas/RoomState';
 import { WeaponPickupSchema } from '@shared/schemas/WeaponPickupSchema';
@@ -41,6 +41,7 @@ export class GameRoom extends GameRoomLifecycle {
   onCreate(): void {
     this.setState(new RoomState());
     this.state.mapSeed = Date.now() % 1000000;
+    this.state.mapTheme = THEME_LIST[Math.floor(Math.random() * THEME_LIST.length)];
     this.updateRoomMetadata();
     this.createInitialPickups();
     this.setSimulationInterval(() => this.tick(), NETWORK.TICK_MS);

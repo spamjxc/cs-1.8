@@ -5,6 +5,8 @@ import { createMapLayout } from '@shared/utils/MapGeometry';
 export type MapSpriteKeys = {
   floor: string;
   box: string;
+  ceil: string;
+  bound: string;
 };
 
 export class MapBuilder {
@@ -22,7 +24,7 @@ export class MapBuilder {
 
     for (let col = 0; col < layout.columns; col++) {
       for (let row = 0; row <= layout.ceilingRows[col]; row++) {
-        this.placeTile(col, row, this.spriteKeys.floor, MAP.WALL_TINT);
+        this.placeTile(col, row, this.spriteKeys.ceil, MAP.WALL_TINT);
       }
 
       for (let row = layout.floorRows[col]; row < layout.rows; row++) {
@@ -31,8 +33,8 @@ export class MapBuilder {
     }
 
     for (let row = 0; row < layout.rows; row++) {
-      this.placeTile(0, row, this.spriteKeys.floor, MAP.WALL_TINT);
-      this.placeTile(layout.columns - 1, row, this.spriteKeys.floor, MAP.WALL_TINT);
+      this.placeTile(0, row, this.spriteKeys.bound, MAP.WALL_TINT);
+      this.placeTile(layout.columns - 1, row, this.spriteKeys.bound, MAP.WALL_TINT);
     }
 
     layout.coverStacks.forEach((cover) => {

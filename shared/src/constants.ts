@@ -31,7 +31,9 @@ export const ASSET_NAMES = {
   // Tiles
   TILE_FLOOR: 'tile_ground.png',
   TILE_WALL: 'tile_box.png',
-  TILE_RAMP: 'tile_box.png'
+  TILE_RAMP: 'tile_box.png',
+  TILE_CEIL: 'tile_ceil.png',
+  TILE_BOUND: 'tile_bound.png',
 } as const;
 
 /**
@@ -187,8 +189,8 @@ export const GAME_CONFIG = {
     ROUND_PIXELS: false
   },
   MOBILE: {
-    SMALL_SCREEN_WIDTH: 760,
-    SMALL_SCREEN_HEIGHT: 560,
+    SMALL_SCREEN_WIDTH: 10,
+    SMALL_SCREEN_HEIGHT: 10,
     STICK_RADIUS: 58,
     STICK_SCALE: 1.18,
     STICK_DEADZONE: 10,
@@ -263,6 +265,22 @@ export const NETWORK = {
   DRIFT_CORRECTION_ALPHA: 0.12
 } as const;
 
+/**
+ * Theme identifiers
+ */
+ export const THEME = {
+  CAVE: 'cave',
+  VOID: 'void',
+} as const;
+
+export const THEME_BG_COLORS: Record<Theme, string> = {
+  [THEME.CAVE]: '#1a1a1a',   // Тёмно-серый (как было по умолчанию)
+  [THEME.VOID]: '#0a0814',   // Тёмно-фиолетовый / космический
+};
+
+export type Theme = typeof THEME[keyof typeof THEME];
+export const THEME_LIST: Theme[] = Object.values(THEME);
+
 export const MAP = {
   WIDTH: 5520,
   HEIGHT: 720,
@@ -272,6 +290,7 @@ export const MAP = {
   BASE_WIDTH: GAME_CONFIG.BASES.WIDTH,
   TILE_SIZE: 64,
   DEFAULT_SEED: 180818,
+  DEFAULT_THEME: THEME.CAVE,
   MAX_STEP_ROWS: 1,
   CORRIDOR_MIN_OPEN_ROWS: 4,
   CORRIDOR_MAX_OPEN_ROWS: 5,
