@@ -89,8 +89,8 @@ export const ASSET_SPECS = {
  */
 export const GAME_CONFIG = {
   PLAYER: {
-    MOVE_SPEED: 340,
-    GHOST_MOVE_SPEED: 420,
+    MOVE_SPEED: 420,
+    GHOST_MOVE_SPEED: 600,
     JUMP_FORCE: -1000,
     DOUBLE_JUMP_FORCE: -800,
     RISE_GRAVITY_MULTIPLIER: 3.5,
@@ -119,8 +119,8 @@ export const GAME_CONFIG = {
       STROKE_WIDTH: 1
     },
     EXPLOSION: {
-      GRENADE_RADIUS: 210,
-      RPG_RADIUS: 120,
+      GRENADE_RADIUS: 180,
+      RPG_RADIUS: 130,
       GRENADE_KNOCKBACK: 1520,
       RPG_KNOCKBACK: 1020
     },
@@ -170,17 +170,17 @@ export const GAME_CONFIG = {
     },
     DIRECT_PROJECTILE: {
       TRAJECTORY: 'straight',
-      PISTOL_BULLET_SPEED: 2500,
-      AUTO_BULLET_SPEED: 1500,
-      ROCKET_SPEED: 800,
-      AUTO_FIRE_RATE_PER_SEC: 10
+      PISTOL_BULLET_SPEED: 2800,
+      AUTO_BULLET_SPEED: 1700,
+      ROCKET_SPEED: 1700,
+      AUTO_FIRE_RATE_PER_SEC: 12
     }
   },
   WORLD: {
     GRAVITY: 1000
   },
   CAMERA: {
-    ZOOM: 1.1,
+    ZOOM: 1,
     MOBILE_ZOOM: 0.82,
     MOBILE_ZOOM_DIVISOR: 1.5,
     FOLLOW_LERP: 0.65,
@@ -201,7 +201,7 @@ export const GAME_CONFIG = {
     PANEL_BOTTOM_GAP_PX: 8
   },
   BASES: {
-    WIDTH: 1200,
+    WIDTH: 1400,
     DAMAGE_WARNING_MIN_ALPHA: 0.12,
     DAMAGE_WARNING_MAX_ALPHA: 0.28,
     DAMAGE_WARNING_BLINK_MS: 20
@@ -264,11 +264,11 @@ export const NETWORK = {
 } as const;
 
 export const MAP = {
-  WIDTH: 5120,
+  WIDTH: 5520,
   HEIGHT: 720,
   GROUND_Y: 600,
   RED_SPAWN_X: 140,
-  BLUE_SPAWN_X: 4980,
+  BLUE_SPAWN_X: 5380,
   BASE_WIDTH: GAME_CONFIG.BASES.WIDTH,
   TILE_SIZE: 64,
   DEFAULT_SEED: 180818,
@@ -292,7 +292,7 @@ export const MAP = {
 export const WEAPONS = {
   FIST: { damage: GAME_CONFIG.WEAPONS.FIST_DAMAGE, ammo: Infinity, type: 'melee' },
   PISTOL: { damage: 10, ammo: 15, type: 'projectile' },
-  AUTO: { damage: 10, ammo: 30, type: 'projectile' },
+  AUTO: { damage: 10, ammo: 60, type: 'projectile' },
   GRENADE: { damage: 40, ammo: 3, type: 'explosive' },
   RPG: { damage: 30, ammo: 5, type: 'explosive' }
 } as const;

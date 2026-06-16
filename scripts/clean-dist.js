@@ -36,6 +36,6 @@ function removeDirectory(targetPath) {
 
   // Удаляем папку только если она не в списке защищённых
   if (!protectedFolders.includes(targetPath)) {
-    fs.rmdirSync(targetPath);
+    fs.rmdirSync(targetPath, { recursive: true });
   }
 }

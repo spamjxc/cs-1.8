@@ -17,7 +17,8 @@
     "dev:client": "vite --config client/vite.config.ts",
     "dev:server": "tsc-watch -p server/tsconfig.json --onSuccess \"node dist/server/server/src/index.js\"",
     "dev": "npm run build:shared && concurrently \"npm run dev:client\" \"npm run dev:server\"",
-    "build": "npm run clean:dist && npm run build:shared && npm run build:client && npm run build:server && npm run write:launchers",
+    "build": "npm run clean:dist && npm run rebuild",
+    "rebuild": "npm run build:shared && npm run build:client && npm run build:server && npm run write:launchers",
     "start": "node dist/server/server/src/index.js",
     "typecheck": "tsc -p shared/tsconfig.json --noEmit && tsc -p client/tsconfig.json --noEmit && tsc -p server/tsconfig.json --noEmit",
     "test:map": "node tests/map-generator-invariants.js"
