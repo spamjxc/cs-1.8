@@ -3,7 +3,7 @@ import { TEAM } from '../constants';
 export type TeamId = typeof TEAM.RED | typeof TEAM.BLUE;
 export type WeaponId = 'fist' | 'pistol' | 'auto' | 'grenade' | 'rpg';
 export type MatchPhase = 'lobby' | 'fight' | 'pause';
-export type AdminCommandType = 'restart' | 'toggle_balance';
+export type AdminCommandType = 'restart' | 'toggle_balance' | 'change_theme';
 
 export type InputCommand = {
   tick: number;

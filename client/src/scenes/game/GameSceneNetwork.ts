@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as Phaser from 'phaser';
-import { GAME, GAME_CONFIG, MAP, TEAM, WEAPONS } from '@shared/constants';
+import { GAME, GAME_CONFIG, MAP, TEAM, THEME, THEME_BG_COLORS, WEAPONS } from '@shared/constants';
 import { MapBuilder } from '@client/entities/MapBuilder';
 import { getPlayerSpawnY } from '@shared/utils/MapGeometry';
 import { NetworkManager } from '@client/systems/NetworkManager';
@@ -26,6 +26,14 @@ export abstract class GameSceneNetwork extends Phaser.Scene {
     this.physics.world.setBounds(0, 0, MAP.WIDTH, MAP.HEIGHT);
     this.baseWarning?.setPosition(width / 2, height / 2);
     this.baseWarning?.setSize(width, height);
+  }
+
+  protected setThemeBackground(theme: string): void {
+    const camera = this.cameras.main;
+    if (camera) {
+      const color = THEME_BG_COLORS[theme as keyof typeof THEME_BG_COLORS] || THEME_BG_COLORS[THEME.CAVE];
+      camera.setBackgroundColor(color);
+    }
   }
 
   protected addBaseZones(): void {

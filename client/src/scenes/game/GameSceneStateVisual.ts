@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as Phaser from 'phaser';
-import { ASSET_NAMES, ASSET_SPECS, GAME, GAME_CONFIG, MAP, TEAM, WEAPONS } from '@shared/constants';
+import { ASSET_NAMES, ASSET_SPECS, GAME, GAME_CONFIG, MAP, TEAM, THEME, Theme, WEAPONS } from '@shared/constants';
 import { MapBuilder } from '@client/entities/MapBuilder';
 import { getPlayerSpawnY } from '@shared/utils/MapGeometry';
 import { NetworkManager } from '@client/systems/NetworkManager';
@@ -301,6 +301,11 @@ export abstract class GameSceneStateVisual extends GameSceneAdmin {
     return this.toFiniteNumber(state?.mapSeed, MAP.DEFAULT_SEED);
   }
 
+  protected getMapTheme(): Theme {
+    const state = this.room?.state as any;
+    return state?.mapTheme || THEME.CAVE;
+  }
+
   protected syncMatchState(): void {
     const state = this.room?.state as any;
     if (!state) {
@@ -324,8 +329,9 @@ export abstract class GameSceneStateVisual extends GameSceneAdmin {
     }
 
     const seed = this.getMapSeed();
-    if (seed !== this.currentMapSeed && this.groundGroup) {
-      this.rebuildMap(seed);
+    const theme = this.getMapTheme();
+    if ((seed !== this.currentMapSeed || theme !== this.currentTheme) && this.groundGroup) {
+      this.rebuildMap(seed, theme);
     }
   }
 
@@ -333,13 +339,20 @@ export abstract class GameSceneStateVisual extends GameSceneAdmin {
     return phase === 'lobby' || phase === 'pause' || phase === 'fight' ? phase : 'fight';
   }
 
-  protected rebuildMap(seed: number): void {
+  protected rebuildMap(seed: number, theme: Theme): void {
     this.currentMapSeed = seed;
+    this.currentTheme = theme;
     this.groundGroup.clear(true, true);
+
+    this.setThemeBackground(theme);
+
     new MapBuilder(this.groundGroup, {
-      floor: SPRITE_KEYS.FLOOR,
-      box: SPRITE_KEYS.BOX
+      floor: `theme.${theme}.floor`,
+      box: `theme.${theme}.box`,
+      ceil: `theme.${theme}.ceil`,
+      bound: `theme.${theme}.bound`,
     }).build(seed);
+
     this.pickupSprites.forEach((sprite) => sprite.destroy());
     this.pickupSprites.clear();
     this.setupPickupStateSync();

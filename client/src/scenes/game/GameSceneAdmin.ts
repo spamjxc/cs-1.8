@@ -29,6 +29,7 @@ export abstract class GameSceneAdmin extends GameSceneHud {
     this.adminElement.innerHTML = `
       <button data-action="restart">Пересоздать</button>
       <button data-action="balance">Автобаланс: выкл</button>
+      <button data-action="theme">Тема: CAVE</button>
       <button data-action="exit">Выйти</button>
     `;
     this.adminElement.querySelectorAll('button').forEach((button) => this.styleGameButton(button as HTMLButtonElement));
@@ -41,6 +42,8 @@ export abstract class GameSceneAdmin extends GameSceneHud {
         this.requestAdminCommand('toggle_balance', target as HTMLButtonElement);
       } else if (action === 'exit') {
         this.exitToLobby();
+      } else if (action === 'theme') {
+        this.requestAdminCommand('change_theme', target as HTMLButtonElement);
       }
     });
     container.appendChild(this.adminElement);
@@ -156,6 +159,12 @@ export abstract class GameSceneAdmin extends GameSceneHud {
       balanceButton.textContent = `Автобаланс: ${this.autoBalance ? 'вкл' : 'выкл'}`;
       balanceButton.style.borderColor = this.autoBalance ? '#9bdc4a' : '#6f805f';
       balanceButton.style.color = this.autoBalance ? '#e8f3d0' : '#dce8cc';
+    }
+
+    const themeButton = this.adminElement.querySelector('[data-action="theme"]') as HTMLButtonElement | null;
+
+    if (themeButton) {
+      themeButton.textContent = `Тема: ${this.currentTheme?.toUpperCase()}`;
     }
 
     this.applyAdminResponsiveLayout();

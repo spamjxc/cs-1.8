@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { Client, Room } from '@colyseus/core';
-import { ADMIN_CONFIG, GAME, MAP, MATCH_PHASES, NETWORK, TEAM, WEAPONS } from '@shared/constants';
+import { ADMIN_CONFIG, GAME, MAP, MATCH_PHASES, NETWORK, TEAM, THEME_LIST, WEAPONS } from '@shared/constants';
 import { PlayerSchema } from '@shared/schemas/PlayerSchema';
 import { RoomState } from '@shared/schemas/RoomState';
 import { AdminAuthEvent, AdminCommandEvent, GameEventPayload, StatsPacket, TeamId, WeaponId } from '@shared/types/network';
@@ -148,6 +148,7 @@ export abstract class GameRoomLifecycle extends Room<RoomState> {
 
   protected resetMatchState(): void {
     this.state.mapSeed = Date.now() % 1000000;
+    this.rotateTheme();
     this.state.redScore = 0;
     this.state.blueScore = 0;
     this.lootSpawnAccumulator = 0;
@@ -264,6 +265,9 @@ export abstract class GameRoomLifecycle extends Room<RoomState> {
         autoBalance: this.state.autoBalance
       });
       this.broadcastEvent({ type: 'chat', message: `[ADMIN] Auto balance ${this.state.autoBalance ? 'enabled' : 'disabled'} by ${nick}` });
+    } else if (data.type === 'change_theme') {
+      this.rotateTheme();
+      this.broadcastEvent({ type: 'chat', message: `[ADMIN] Theme changed to ${this.state.mapTheme.toUpperCase()} by ${nick}` });
     }
   }
 
@@ -273,6 +277,14 @@ export abstract class GameRoomLifecycle extends Room<RoomState> {
       redCount: this.countTeam(TEAM.RED),
       blueCount: this.countTeam(TEAM.BLUE)
     });
+  }
+
+  protected rotateTheme(): void {
+    const current = this.state.mapTheme as Theme;
+    const available = THEME_LIST.filter(t => t !== current);
+    const next = available[Math.floor(Math.random() * available.length)];
+    this.state.mapTheme = next;
+    console.log(`Theme rotated: ${current} -> ${next}`);
   }
 
   protected getBalancedTeam(requestedTeam: TeamId): TeamId {
